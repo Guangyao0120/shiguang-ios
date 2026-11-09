@@ -64,6 +64,10 @@ final class ReviewUITests: XCTestCase {
         XCTAssertTrue(close.waitForExistence(timeout:10)); close.tap()
         assertPosition(2,counter:counter)
         drag(app,dx:0.6,dy:0); assertPosition(1,counter:counter)
+        for _ in 0..<3 {
+            drag(app,dx:-0.6,dy:0); assertPosition(2,counter:counter)
+            drag(app,dx:0.6,dy:0); assertPosition(1,counter:counter)
+        }
         drag(app,dx:0,dy:-0.6); assertPosition(2,counter:counter)
         app.buttons["review.undo"].tap(); assertPosition(1,counter:counter)
         let attachment = XCTAttachment(screenshot:app.screenshot())

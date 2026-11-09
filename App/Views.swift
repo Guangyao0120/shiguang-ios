@@ -515,29 +515,26 @@ struct ReviewView: View {
     @Environment(\.dismiss) private var dismiss
     let ids: [String]
     @State private var index = 0
-    @State private var offset: CGSize = .zero
     @State private var preview: ReviewPreview?
     @State private var closingPreview: ReviewPreview?
     @State private var hasAppeared = false
     private var current: String? { index < ids.count ? ids[index] : nil }
+    private var nextID: String? {
+        let position = ReviewNavigation.next(from:index,ids:ids,records:store.state.records,pending:store.state.pending)
+        return position < ids.count ? ids[position] : nil
+    }
+    private var previousID: String? {
+        let position = ReviewNavigation.previous(from:index,ids:ids,records:store.state.records)
+        return position != index && position < ids.count ? ids[position] : nil
+    }
     var body: some View {
         VStack(spacing: 18) {
             Text("\(min(index + 1, ids.count)) / \(ids.count)").accessibilityIdentifier("review.counter").font(.subheadline).foregroundStyle(Palette.secondary)
             if let current {
-                Thumbnail(id: current, fit: true, resolution: 2048, clearOnly: true).frame(maxHeight: .infinity).clipped()
-                    .clipShape(RoundedRectangle(cornerRadius: 20))
-                    .offset(offset).rotationEffect(.degrees(Double(offset.width / 30)))
-                    .overlay(alignment: .top) {
-                        if offset.height < -45 { Label("放入待删", systemImage: "trash").padding().background(.regularMaterial, in: Capsule()).foregroundStyle(.red) }
-                    }
-                    .contentShape(Rectangle())
-                    .accessibilityElement(children:.ignore).accessibilityLabel(L.t(store.state.records[current]?.isVideo == true ? "视频" : "照片")).accessibilityIdentifier("review.photo")
-                    .gesture(DragGesture(minimumDistance:12,coordinateSpace:.named("review.canvas")).onChanged { offset = $0.translation }.onEnded { value in
-                        if value.translation.height < -100 && abs(value.translation.height) > abs(value.translation.width) { stageCurrent() }
-                        else if value.translation.width < -100 { next() }
-                        else if value.translation.width > 100 { previous() }
-                        withAnimation { offset = .zero }
-                    })
+                ReviewPager(current:current,previous:previousID,next:nextID,
+                    video:store.state.records[current]?.isVideo == true,
+                    step:{ direction in if direction > 0 { next() } else { previous() } },stage:{ stageCurrent() })
+                    .frame(maxHeight:.infinity).clipped().clipShape(RoundedRectangle(cornerRadius:20))
                 Text("左滑下一张 · 右滑上一张 · 上滑待删").font(.footnote).foregroundStyle(Palette.secondary)
                 ReviewControls(pending:store.state.pending.contains(current),clear:{
                     let item = ReviewPreview(id:current,wasPending:store.state.pending.contains(current)); closingPreview = item; preview = item
@@ -569,8 +566,8 @@ struct ReviewView: View {
         guard let current else { return }
         store.stage(current); next()
     }
-    private func next() { index = ReviewNavigation.next(from: index, ids: ids, existing: Set(store.state.records.keys), pending: store.state.pending) }
-    private func previous() { index = ReviewNavigation.previous(from: index, ids: ids, existing: Set(store.state.records.keys)) }
+    private func next() { index = ReviewNavigation.next(from: index, ids: ids, records:store.state.records, pending: store.state.pending) }
+    private func previous() { index = ReviewNavigation.previous(from: index, ids: ids, records:store.state.records) }
     private func skipPending() {
         while index < ids.count && (store.state.pending.contains(ids[index]) || store.state.records[ids[index]] == nil) { index += 1 }
     }

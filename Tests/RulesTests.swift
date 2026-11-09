@@ -542,6 +542,44 @@ final class RulesTests: XCTestCase {
         XCTAssertEqual(reopened.records.count,11); XCTAssertTrue(reopened.records["done"]!.analyzed)
     }
 
+    @MainActor
+    func testReviewPrefetchReusesNeighboursAndBoundsDecodedImageMemory() async throws {
+        let image = UIGraphicsImageRenderer(size:CGSize(width:8,height:8)).image { _ in UIColor.green.setFill(); UIBezierPath(rect:CGRect(x:0,y:0,width:8,height:8)).fill() }
+        var requests: [String] = []
+        let cache = ReviewImageCache(loader:{ id in requests.append(id); return image })
+        cache.update(["a","b","c"])
+        for _ in 0..<500 { if cache.images.count == 3 { break }; try await Task.sleep(for:.milliseconds(10)) }
+        XCTAssertEqual(Set(cache.images.keys),["a","b","c"])
+        cache.update(["b","c","d"])
+        for _ in 0..<500 { if cache.images["d"] != nil { break }; try await Task.sleep(for:.milliseconds(10)) }
+        XCTAssertEqual(Set(cache.images.keys),["b","c","d"])
+        XCTAssertEqual(requests.filter { $0 == "b" }.count,1)
+        XCTAssertEqual(requests.filter { $0 == "c" }.count,1)
+        cache.clear(); XCTAssertTrue(cache.images.isEmpty)
+    }
+    @MainActor
+    func testReviewPrefetchRejectsLateImageAfterLeavingItsWindow() async throws {
+        let gate = ScanTestGate(), waiting = expectation(description:"old photo loading")
+        let image = UIImage()
+        let cache = ReviewImageCache(loader:{ id in
+            if id == "old" { waiting.fulfill(); await gate.wait() }
+            return image
+        })
+        cache.update(["old"]); await fulfillment(of:[waiting],timeout:5)
+        cache.update(["new"]); gate.release()
+        for _ in 0..<500 { if cache.images["new"] != nil { break }; try await Task.sleep(for:.milliseconds(10)) }
+        XCTAssertNil(cache.images["old"]); XCTAssertNotNil(cache.images["new"])
+        cache.clear()
+    }
+    func testReviewCursorHandlesLargeLibrariesWithoutRebuildingIdentifierSets() {
+        let ids = (0..<12000).map { "asset-\($0)" }
+        let records = Dictionary(uniqueKeysWithValues:ids.map { ($0,media($0)) })
+        XCTAssertEqual(ReviewNavigation.next(from:5000,ids:ids,records:records,pending:[ids[5001]]),5002)
+        XCTAssertEqual(ReviewNavigation.previous(from:5002,ids:ids,records:records),5001)
+        XCTAssertEqual(ReviewNavigation.previous(from:0,ids:ids,records:records),0)
+        XCTAssertEqual(ReviewNavigation.next(from:11999,ids:ids,records:records,pending:[]),12000)
+    }
+
     private func media(_ id: String, _ seconds: TimeInterval = 0,
                        lat: Double? = nil, lon: Double? = nil) -> MediaRecord {
         MediaRecord(id: id, date: Date(timeIntervalSince1970: 1_700_000_000 + seconds),
