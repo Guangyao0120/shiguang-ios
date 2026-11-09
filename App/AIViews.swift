@@ -152,14 +152,14 @@ struct AIOrganizeView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 Text("说说你想怎么整理").font(.system(size: 28, weight: .medium, design: .serif))
-                TextField("例如：把桐桐在长沙旅行的人像放一起", text: $command, axis: .vertical)
+                TextField("整理指令", text: $command, prompt: Text("例如：把桐桐在长沙旅行的人像放一起").foregroundColor(Palette.secondary), axis: .vertical)
                     .lineLimit(3...5).padding(20).paperCard()
                     .disabled(running)
                 Text("指令发送至 DeepSeek，按账户计费；不上传图库。")
                     .font(.footnote).foregroundStyle(Palette.secondary)
                 HStack {
                     Button(running ? "正在解析…" : "生成整理草稿") { generate() }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(QuietPrimaryButtonStyle())
                         .disabled(running || command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !APIKeyStore.hasKey)
                     if running { Button("取消") { requestTask?.cancel() } }
                 }
@@ -186,7 +186,7 @@ struct AIOrganizeView: View {
                             let ids = matches.map(\.id)
                             reviewed = false
                             Task { await store.exportAlbum(name: plan.albumName, ids: ids) }
-                        }.buttonStyle(.borderedProminent)
+                        }.buttonStyle(QuietPrimaryButtonStyle())
                             .disabled(!reviewed || matches.isEmpty || store.busy || store.scanning)
                     }
                 }

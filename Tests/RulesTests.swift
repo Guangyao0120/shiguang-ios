@@ -16,6 +16,10 @@ final class RulesTests: XCTestCase {
             return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
         }
         for style in [UIUserInterfaceStyle.light, .dark] {
+            for fill in [Palette.accent, Palette.destructive] {
+                let first = luminance(Palette.onAccent, style), second = luminance(fill, style)
+                XCTAssertGreaterThanOrEqual((max(first, second) + 0.05) / (min(first, second) + 0.05), 4.5)
+            }
             for text in [Palette.ink, Palette.secondary, Palette.accent] {
                 for background in [Palette.surface, Palette.canvas] {
                     let first = luminance(text, style), second = luminance(background, style)

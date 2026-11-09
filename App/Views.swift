@@ -41,7 +41,7 @@ struct RootView: View {
                     Text("整理照片，收藏回忆。")
                         .foregroundStyle(Palette.secondary)
                     Button("选择可整理的照片") { Task { await store.connect() } }
-                        .buttonStyle(.borderedProminent).controlSize(.large)
+                        .buttonStyle(QuietPrimaryButtonStyle()).controlSize(.large)
                     if store.authorization == .denied || store.authorization == .restricted {
                         Button("前往系统设置授权") {
                             if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
@@ -82,13 +82,13 @@ struct HomeView: View {
                     Image(systemName: "leaf").font(.system(size: 34, weight: .ultraLight)).foregroundStyle(Palette.accent)
                 }
                 VStack(alignment: .leading, spacing: 10) {
-                    Label(store.scanning ? store.status : (store.refreshing ? "核对相册中" : "从上次继续"), systemImage: store.scanning ? "viewfinder" : "checkmark.circle")
-                        .font(.subheadline).foregroundStyle(Palette.secondary)
+                    Label(store.status, systemImage: store.scanning ? "viewfinder" : "checkmark.circle")
+                        .font(.subheadline).foregroundStyle(Palette.secondary).lineLimit(2)
                     if store.scanning { ProgressView(value: store.progress) }
                     HStack {
                         Button(store.scanning ? "暂停" : "整理截图") {
                             if store.scanning { store.pause() } else { store.scan() }
-                        }.buttonStyle(.borderedProminent).disabled(store.busy || store.refreshing || !store.loaded)
+                        }.buttonStyle(QuietPrimaryButtonStyle()).disabled(store.busy || store.refreshing || !store.loaded)
                         Menu("更多") {
                             Button("刷新相册") { store.refresh() }
                             Button("整理所有图片 · 每批100张") { store.scan(screenshotsOnly: false) }
@@ -192,7 +192,7 @@ struct CollectionView: View {
                 HStack {
                     Text("\(records.count) 项").foregroundStyle(Palette.secondary)
                     Spacer()
-                    Button("连续整理") { reviewing = true }.buttonStyle(.borderedProminent).disabled(records.isEmpty)
+                    Button("连续整理") { reviewing = true }.buttonStyle(QuietPrimaryButtonStyle()).disabled(records.isEmpty)
                 }
                 MediaGrid(records: records)
             }.padding()
@@ -453,7 +453,7 @@ struct PendingView: View {
                     Button(role: .destructive) { Task { await store.deletePending() } } label: {
                         Text(store.busy ? "等待系统处理…" : "请求系统删除 \(store.visiblePending.count) 项")
                             .frame(maxWidth: .infinity)
-                    }.buttonStyle(.borderedProminent).disabled(store.busy || store.scanning)
+                    }.buttonStyle(QuietPrimaryButtonStyle()).disabled(store.busy || store.scanning)
                     Text("删除需系统确认，并同步 iCloud；可从「最近删除」恢复。")
                         .font(.footnote).foregroundStyle(Palette.secondary)
                 }
@@ -552,7 +552,7 @@ struct SimilarView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 20) {
                 Button(store.busy ? "正在比对…" : "查找相似照片") { store.findSimilar() }
-                    .buttonStyle(.borderedProminent).disabled(store.busy || store.scanning || store.refreshing)
+                    .buttonStyle(QuietPrimaryButtonStyle()).disabled(store.busy || store.scanning || store.refreshing)
                 Text("相似候选，请逐张确认").font(.subheadline).foregroundStyle(Palette.secondary)
                 if store.similar.isEmpty { ContentUnavailableView("暂无候选", systemImage: "square.on.square", description: Text("完成本地扫描后在这里查看。")) }
                 ForEach(Array(store.similar.enumerated()), id: \.offset) { _, pair in

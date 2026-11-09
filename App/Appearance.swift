@@ -30,7 +30,24 @@ enum Palette {
     static let ink = adaptive(0x29372D, 0xF1F2E9)
     static let secondary = adaptive(0x667066, 0xB8C5B9)
     static let accent = adaptive(0x50664A, 0xC3D5AE)
+    static let onAccent = adaptive(0xFFFDF8, 0x21301B)
+    static let destructive = adaptive(0xA8332D, 0xE59C94)
     static let line = adaptive(0xDDDCD1, 0x465448)
+}
+
+struct QuietPrimaryButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var enabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.subheadline.weight(.semibold))
+            .padding(.horizontal, 20).padding(.vertical, 13)
+            .foregroundStyle(Palette.onAccent)
+            .background(configuration.role == .destructive ? Palette.destructive : Palette.accent, in: Capsule())
+            .opacity(enabled ? (configuration.isPressed ? 0.78 : 1) : 0.38)
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.98 : 1)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: configuration.isPressed)
+    }
 }
 
 struct PaperCard: ViewModifier {

@@ -12,7 +12,7 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
     @Published var loaded = false
     @Published var busy = false
     @Published var progress = 0.0
-    @Published var status = "正在读取本地整理记录，不进行图片识别…"
+    @Published var status = "读取整理记录…"
     @Published var message: String?
     @Published var similar: [[String]] = []
     @Published private(set) var index = LibraryIndex()
@@ -86,7 +86,7 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
         }
         authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
         if permitted {
-            status = "正在读取上次的分类结果…"
+            status = "读取上次分类…"
             let snapshot = state, fullAccess = authorization == .authorized
             let cached = await Task.detached(priority: .utility) {
                 let ids = fullAccess ? Set(snapshot.records.keys) : LibraryMetadata.visibleIdentifiers()
@@ -156,7 +156,7 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
         if !force && !metadataDirty { return }
         if !registered { PHPhotoLibrary.shared().register(self); registered = true }
         refreshing = true; metadataDirty = false
-        status = "正在后台核对相册目录，不重新识别已完成照片…"
+        status = "核对相册中…"
         refreshTask = Task { [weak self] in
             guard let self else { return }
             defer { self.refreshing = false }
@@ -171,7 +171,7 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
                 self.visibleIDs = ids
                 self.state = next
                 let analyzed = next.records.values.lazy.filter { ids.contains($0.id) && $0.analyzed }.count
-                self.status = "目录就绪 · \(ids.count) 项 · 已识别 \(analyzed) 项；识别只在点击扫描时运行"
+                self.status = "已识别 \(analyzed) 项 · 共 \(ids.count) 项"
                 self.save()
                 return
             }
@@ -181,7 +181,7 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
     func scan(screenshotsOnly: Bool = true) {
         guard !scanning, !busy, !refreshing, loaded, permitted else { return }
         let todo = ScanPolicy.candidates(records.compactMap { state.records[$0.id] }, screenshotsOnly: screenshotsOnly)
-        guard !todo.isEmpty else { status = "没有可处理的\(screenshotsOnly ? "截图" : "图片")；本批已完成，云端原件可下载后刷新重试"; return }
+        guard !todo.isEmpty else { status = "暂无待识别的\(screenshotsOnly ? "截图" : "图片")"; return }
         scanning = true; progress = 0
         scanTask = Task { [weak self] in
             guard let self else { return }
@@ -204,10 +204,10 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
                 updates.append(updated)
                 if updates.count >= 5 { self.commitAnalysis(updates); updates.removeAll(keepingCapacity: true); self.save() }
                 self.progress = Double(position + 1) / Double(todo.count)
-                self.status = "本批识别 \(position + 1)/\(todo.count) · 已完成结果会保存"
+                self.status = "正在整理 · \(position + 1)/\(todo.count)"
                 do { try await Task.sleep(nanoseconds: 100_000_000) } catch { return }
             }
-            self.status = "本批 \(todo.count) 张处理结束；可继续下一批，不重扫已识别照片"
+            self.status = "本批完成 · 可继续整理"
         }
     }
     private func commitAnalysis(_ updates: [MediaRecord]) {
@@ -221,7 +221,7 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
         }
         state = next
     }
-    func pause() { scanTask?.cancel(); if scanning { status = "暂停中；已完成的识别结果会保留" } }
+    func pause() { scanTask?.cancel(); if scanning { status = "已暂停" } }
 
     func stage(_ id: String) { state.stage(id); save() }
     func restore(_ id: String) {
