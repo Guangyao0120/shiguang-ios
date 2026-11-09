@@ -187,7 +187,7 @@ struct PendingPhotoGrid: UIViewRepresentable {
         }
         func setChecked(_ value: Bool) {
             check.image = UIImage(systemName: value ? "checkmark.circle.fill" : "circle", withConfiguration: UIImage.SymbolConfiguration(pointSize: 24, weight: .semibold))?
-                .applyingSymbolConfiguration(UIImage.SymbolConfiguration(paletteColors: value ? [.white,tintColor] : [.white]))
+                .applyingSymbolConfiguration(UIImage.SymbolConfiguration(paletteColors: value ? [UIColor(Palette.onAccent),tintColor] : [.white]))
             accessibilityLabel = L.t(value ? "取消选择" : "选择照片")
             accessibilityTraits = value ? [.button,.selected] : [.button]
             contentView.layer.borderWidth = value ? 2 : 0
