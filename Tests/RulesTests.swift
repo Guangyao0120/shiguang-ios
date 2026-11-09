@@ -4,6 +4,34 @@ import UIKit
 @testable import Shiguang
 
 final class RulesTests: XCTestCase {
+    func testVideoTitlesUseExplicitRecipientsAndDoNotInventNames() {
+        XCTAssertEqual(VideoTitleRules.title(from: "桐桐你好，祝桐桐生日快乐！"), "桐桐 · 生日祝福")
+        XCTAssertEqual(VideoTitleRules.title(from: "祝你生日快乐"), "生日祝福 · 对象待确认")
+        XCTAssertEqual(VideoTitleRules.title(from: "祝大家新年快乐"), "新年祝福 · 对象待确认")
+        XCTAssertEqual(VideoTitleRules.title(from: "祝愿小王新婚快乐"), "小王 · 新婚祝福")
+        XCTAssertEqual(VideoTitleRules.title(from: "周末我们去了公园。拍了很多照片"), "周末我们去了公园")
+    }
+    func testTripNameUsesLunarHolidayAndKnownLocationWithoutGuessingUnknownCities() throws {
+        let date = try XCTUnwrap(ISO8601DateFormatter().date(from: "2025-10-06T04:00:00Z"))
+        var record = media("a", lat: 28.228, lon: 112.939); record.date = date
+        XCTAssertEqual(TripNaming.name(for: [record]), "中秋 · 长沙")
+        XCTAssertNil(TripNaming.city(latitude: 0, longitude: 0))
+        record.latitude = 0; record.longitude = 0
+        XCTAssertEqual(TripNaming.name(for: [record]), "中秋 · 出游候选")
+    }
+    func testVideoTranscriptAndTitleSurviveStorageAndAreSearchable() throws {
+        var record = media("v"); record.isVideo = true
+        record.voiceTranscript = "祝桐桐生日快乐"; record.videoTitle = "桐桐 · 生日祝福"
+        let decoded = try JSONDecoder().decode(MediaRecord.self, from: JSONEncoder().encode(record))
+        var state = LibraryState(); state.records = ["v": decoded]
+        let index = LibraryIndex.build(state: state, visible: ["v"])
+        XCTAssertTrue(index.search["v"]!.contains("生日快乐"))
+        XCTAssertEqual(decoded.videoTitle, record.videoTitle)
+        let suggestion = AISuggestion(tags: ["视频"], summary: "生日祝福", explanation: "来自转写", videoTitle: "桐桐 · 生日祝福")
+        XCTAssertNoThrow(try suggestion.validated())
+        let plan = AIPlan(tags: [], text: "生日快乐", person: "", trip: "", albumName: "祝福", explanation: "", unsupported: [])
+        XCTAssertTrue(plan.matches(record, people: [], trips: []))
+    }
     func testLightAndDarkTextRemainReadableOnCardsAndCanvas() {
         func luminance(_ color: Color, _ style: UIUserInterfaceStyle) -> Double {
             let resolved = UIColor(color).resolvedColor(with: UITraitCollection(userInterfaceStyle: style))

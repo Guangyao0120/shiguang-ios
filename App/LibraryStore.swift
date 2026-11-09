@@ -282,8 +282,25 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
             }
         }
         state.records[id]?.aiSummary = suggestion.summary
+        if state.records[id]?.isVideo == true, let title = suggestion.videoTitle, !title.isEmpty {
+            state.records[id]?.videoTitle = title
+        }
         state.records[id]?.keywords = TagNames.normalized((state.records[id]?.keywords ?? []) + (suggestion.keywords ?? []))
         save()
+    }
+    func setVideoTitle(_ id: String, title: String) {
+        guard visibleIDs.contains(id), state.records[id]?.isVideo == true else { return }
+        let value = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return }
+        state.records[id]?.videoTitle = String(value.prefix(40)); save()
+    }
+    func applyVideoTranscript(_ id: String, text: String) {
+        guard visibleIDs.contains(id), state.records[id]?.isVideo == true else { return }
+        var next = state
+        next.records[id]?.voiceTranscript = text
+        if next.records[id]?.videoTitle == nil { next.records[id]?.videoTitle = VideoTitleRules.title(from: text) }
+        next.records[id]?.tags.insert(.video)
+        state = next; save(immediately: true)
     }
     func rebuildTrips() {
         guard !busy, !scanning, !refreshing else { return }

@@ -46,6 +46,8 @@ struct MediaRecord: Codable, Identifiable {
     var unavailable = false
     var aiSummary: String?
     var keywords: [String]?
+    var voiceTranscript: String?
+    var videoTitle: String?
     var effectiveTags: Set<PhotoTag> {
         let result = tags.union(addedTags).subtracting(removedTags)
         return result.isEmpty ? [.other] : result
@@ -170,11 +172,8 @@ enum TripBuilder {
             }
             groups.append([record])
         }
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "zh_CN")
-        formatter.dateFormat = "yyyy年M月d日"
         return groups.filter { $0.count >= 3 }.map { group in
-            Trip(name: "出游候选 · \(formatter.string(from: group[0].date))",
+            Trip(name: TripNaming.name(for: group),
                  members: Set(group.map(\.id)))
         }
     }

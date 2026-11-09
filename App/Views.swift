@@ -245,6 +245,9 @@ struct MediaGrid: View {
                                 }
                             }.clipShape(RoundedRectangle(cornerRadius: 10))
                             let labels = store.tagLabels(for: record)
+                            if let title = record.videoTitle, record.isVideo {
+                                Text(title).font(.caption.weight(.medium)).foregroundStyle(Palette.ink).lineLimit(1)
+                            }
                             Text(labels.prefix(2).map { "#" + $0 }.joined(separator: " "))
                                 .font(.caption2).foregroundStyle(Palette.secondary).lineLimit(1)
 
@@ -293,6 +296,7 @@ struct DetailView: View {
     @State private var player: AVPlayer?
     @State private var loadingVideo = false
     @State private var showingAI = false
+    @State private var showingVideoTools = false
     @State private var keywordInput = ""
     var record: MediaRecord? { store.state.records[id] }
     var body: some View {
@@ -303,6 +307,9 @@ struct DetailView: View {
                     else { Thumbnail(id: id, fit: true, resolution: 1000).frame(height: 340).clipped() }
                     if record.isVideo {
                         Button(loadingVideo ? "正在读取本地视频…" : "播放本地视频") { loadVideo() }.disabled(loadingVideo)
+                        if let title = record.videoTitle { Text(title).font(.title3.weight(.medium)) }
+                        Button("视频标题与转写", systemImage: "waveform") { showingVideoTools = true }
+                            .buttonStyle(.bordered)
                         
                     }
                     Text(record.date.formatted(date: .abbreviated, time: .shortened)).foregroundStyle(Palette.secondary)
@@ -371,6 +378,7 @@ struct DetailView: View {
         }.background(canvas).navigationTitle("照片详情").navigationBarTitleDisplayMode(.inline)
             .onDisappear { player?.pause() }
             .sheet(isPresented: $showingAI) { AIPhotoView(id: id) }
+            .sheet(isPresented: $showingVideoTools) { VideoOrganizeView(id: id) }
     }
     private func loadVideo() {
         guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil).firstObject else { return }

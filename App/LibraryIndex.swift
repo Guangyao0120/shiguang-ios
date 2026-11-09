@@ -31,7 +31,7 @@ struct LibraryIndex {
             let personNames = record.people.compactMap { people[$0] }.sorted()
             let tripNames = (tripsByMedia[record.id] ?? []).map { $0.1 }.sorted()
             index.labels[record.id] = TagNames.normalized(record.customTags + personNames + tripNames + categories.map(\.rawValue))
-            index.search[record.id] = ([record.text, record.aiSummary ?? ""] + record.customTags + personNames + tripNames + categories.map(\.rawValue)).joined(separator: " ").lowercased()
+            index.search[record.id] = ([record.text, record.aiSummary ?? "", record.voiceTranscript ?? "", record.videoTitle ?? ""] + record.customTags + personNames + tripNames + categories.map(\.rawValue)).joined(separator: " ").lowercased()
             if state.pending.contains(record.id) { index.pending.append(record); continue }
             index.active.append(record)
             for tag in categories { index.byTag[tag, default: []].append(record) }
@@ -104,6 +104,7 @@ enum LibraryMetadata {
             if record.modified != value.modified {
                 record.analyzed = false; record.hash = nil; record.text = ""
                 record.tags = []; record.reasons = []; record.aiSummary = nil
+                record.voiceTranscript = nil; record.videoTitle = nil
             }
             record.date = value.date; record.modified = value.modified
             record.latitude = value.latitude; record.longitude = value.longitude

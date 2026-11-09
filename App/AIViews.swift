@@ -65,6 +65,7 @@ struct AIPhotoView: View {
     @State private var errorText = ""
     @State private var requestTask: Task<Void, Never>?
     var record: MediaRecord? { store.state.records[id] }
+    private var textSource: String { record?.voiceTranscript ?? record?.text ?? "" }
     var body: some View {
         NavigationStack {
             Form {
@@ -81,7 +82,7 @@ struct AIPhotoView: View {
                     } else if includeImage && ready { Text("无法读取本地缩略图，请先在系统照片中下载原件。") }
                     Button(running ? "正在等待 DeepSeek…" : "确认发送并识别（会计费）") { send() }
                         .disabled(!ready || running || !APIKeyStore.hasKey || suggestion != nil
-                            || (!includeImage && (record?.text.isEmpty ?? true)) || (includeImage && preparedJPEG == nil))
+                            || (!includeImage && textSource.isEmpty) || (includeImage && preparedJPEG == nil))
                     if !APIKeyStore.hasKey { Text("请先到「AI 设置」保存 API Key。") }
                 }
                 if !errorText.isEmpty { Section("未完成") { Text(errorText) } }
@@ -106,8 +107,9 @@ struct AIPhotoView: View {
         }
         .task {
             guard let record else { return }
-            let raw = String(record.text.prefix(8000))
-            preparedText = "素材类型：\(record.isVideo ? "视频封面，不含语音" : "照片")\nOCR 文字（最多8000字）：\n" + raw
+            let raw = String(textSource.prefix(8000))
+            let kind = record.isVideo ? (record.voiceTranscript == nil ? "视频封面，不含语音" : "视频语音转写，可能有识别错误") : "照片OCR文字"
+            preparedText = "素材类型：\(kind)\n文字（最多8000字）：\n" + raw
             if let image = await PhotoAccess.image(id: id, size: CGSize(width: 1024, height: 1024)) {
                 let scale = min(1, 1024 / max(image.size.width, image.size.height))
                 let size = CGSize(width: max(1, image.size.width * scale), height: max(1, image.size.height * scale))
