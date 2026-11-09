@@ -2,6 +2,78 @@ import XCTest
 @testable import Shiguang
 
 final class RulesTests: XCTestCase {
+    func testLargeLibraryIndexPreparesCountsWithoutRepeatedViewSorting() {
+        var state = LibraryState()
+        let person = NamedPerson(name: "桐桐")
+        state.people = [person]
+        for i in 0..<12000 {
+            var record = media("asset-\(i)", Double(i))
+            record.tags = i % 2 == 0 ? [.screenshot, .chat] : [.portrait]
+            if i % 3 == 0 { record.keywords = ["夜景"] }
+            if i % 5 == 0 { record.people = [person.id] }
+            state.records[record.id] = record
+        }
+        state.pending = ["asset-0"]
+        let trip = Trip(name: "中秋长沙", members: ["asset-1", "asset-5"])
+        state.trips = [trip]
+        let index = LibraryIndex.build(state: state, visible: Set(state.records.keys).subtracting(["asset-2"]))
+        XCTAssertEqual(index.records.count, 11999)
+        XCTAssertEqual(index.active.count, 11998)
+        XCTAssertEqual(index.pending.count, 1)
+        XCTAssertEqual(index.byTag[.chat]?.count, 5998)
+        XCTAssertEqual(index.byTrip[trip.id]?.count, 2)
+        XCTAssertTrue(index.labels["asset-5"]?.contains("桐桐") == true)
+        XCTAssertTrue(index.search["asset-5"]?.contains("中秋长沙") == true)
+        XCTAssertEqual(index.records.first?.id, "asset-11999")
+    }
+    func testMetadataRefreshReusesAnalysisAndManualTags() {
+        var record = media("a")
+        record.analyzed = true; record.tags = [.chat]; record.text = "已识别文字"
+        record.keywords = ["重要"]
+        var state = LibraryState(); state.records = ["a": record]
+        let merged = LibraryMetadata.merge([media("a")], into: state, fullAccess: true, retryUnavailable: false)
+        XCTAssertTrue(merged.records["a"]!.analyzed)
+        XCTAssertEqual(merged.records["a"]!.text, "已识别文字")
+        XCTAssertEqual(merged.records["a"]!.customTags, ["重要"])
+        XCTAssertTrue(ScanPolicy.candidates(Array(merged.records.values), screenshotsOnly: false).isEmpty)
+        var edited = media("a"); edited.modified = Date()
+        let changed = LibraryMetadata.merge([edited], into: state, fullAccess: true, retryUnavailable: false)
+        XCTAssertFalse(changed.records["a"]!.analyzed)
+        XCTAssertEqual(changed.records["a"]!.customTags, ["重要"])
+    }
+    func testLimitedPermissionRefreshDoesNotEraseHiddenRecords() {
+        var state = LibraryState(); state.records = ["a": media("a"), "b": media("b")]
+        let limited = LibraryMetadata.merge([media("a")], into: state, fullAccess: false, retryUnavailable: false)
+        XCTAssertNotNil(limited.records["b"])
+        XCTAssertEqual(LibraryIndex.build(state: limited, visible: ["a"]).records.map(\.id), ["a"])
+    }
+    func testScanIsBoundedAndDoesNotReanalyzeCompletedOrUnavailableItems() {
+        var records = (0..<500).map { i -> MediaRecord in var record = media("\(i)"); record.isScreenshot = true; return record }
+        records[0].analyzed = true; records[1].isVideo = true; records[2].unavailable = true
+        records[3].isScreenshot = false
+        let todo = ScanPolicy.candidates(records, screenshotsOnly: true)
+        XCTAssertEqual(todo.count, 100)
+        XCTAssertEqual(todo.first?.id, "4")
+        XCTAssertEqual(ScanPolicy.candidates(records, screenshotsOnly: true, limit: 0).count, 0)
+    }
+    func testSimilarityComparisonBudgetStopsWork() {
+        var a = media("a"), b = media("b")
+        a.hash = 0xA55AA55AA55AA55A; b.hash = a.hash
+        XCTAssertTrue(Similarity.pairs([a, b], comparisonLimit: 0).isEmpty)
+        XCTAssertEqual(Similarity.pairs([a, b], comparisonLimit: 1), [["a", "b"]])
+    }
+    func testDiskDoesNotLetOlderSnapshotsOverwriteNewerEdits() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let disk = LibraryDisk(url: folder.appendingPathComponent("state.json"))
+        _ = try await disk.load()
+        var newer = LibraryState(); var record = media("a"); record.keywords = ["已修正"]
+        newer.records["a"] = record
+        try await disk.write(newer, revision: 2)
+        try await disk.write(LibraryState(), revision: 1)
+        let loaded = try await disk.load()
+        XCTAssertEqual(loaded.records["a"]?.customTags, ["已修正"])
+        try FileManager.default.removeItem(at: folder)
+    }
     private func media(_ id: String, _ seconds: TimeInterval = 0,
                        lat: Double? = nil, lon: Double? = nil) -> MediaRecord {
         MediaRecord(id: id, date: Date(timeIntervalSince1970: 1_700_000_000 + seconds),

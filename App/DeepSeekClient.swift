@@ -73,7 +73,7 @@ struct AISuggestion: Codable {
     }
 }
 
-struct AIPlan: Codable {
+struct AIPlan: Codable, Equatable {
     let tags: [String]
     let text: String
     let person: String

@@ -80,6 +80,7 @@ struct Trip: Codable, Identifiable {
 }
 
 struct LibraryState: Codable {
+    var similarPairs: [[String]]?
     var records: [String: MediaRecord] = [:]
     var people: [NamedPerson] = []
     var trips: [Trip] = []
@@ -101,6 +102,7 @@ struct LibraryState: Codable {
         if let lastStaged, ids.contains(lastStaged) { self.lastStaged = nil }
         for index in trips.indices { trips[index].members.subtract(ids) }
         trips.removeAll { $0.members.isEmpty }
+        similarPairs?.removeAll { !$0.allSatisfy { !ids.contains($0) } }
     }
 }
 
@@ -180,12 +182,14 @@ enum TripBuilder {
 
 enum Similarity {
     static func distance(_ lhs: UInt64, _ rhs: UInt64) -> Int { (lhs ^ rhs).nonzeroBitCount }
-    static func pairs(_ records: [MediaRecord]) -> [[String]] {
-        let images = records.filter { !$0.isVideo && $0.hash != nil }.sorted { $0.id < $1.id }
+    static func pairs(_ records: [MediaRecord], comparisonLimit: Int = 200_000) -> [[String]] {
+        let images = Array(records.filter { !$0.isVideo && $0.hash != nil }.sorted { $0.id < $1.id }.prefix(3000))
         var result: [[String]] = []
+        var comparisons = 0
         // A hash split into 8 bytes: <= 6 bit differences guarantees a matching byte.
         var buckets: [String: [Int]] = [:]
         for i in images.indices {
+            if Task.isCancelled { return result }
             let hash = images[i].hash!
             var candidates: Set<Int> = []
             for byte in 0..<8 {
@@ -193,7 +197,10 @@ enum Similarity {
                 candidates.formUnion(buckets[key] ?? [])
                 buckets[key, default: []].append(i)
             }
-            for j in candidates.sorted() where distance(hash, images[j].hash!) <= 6 {
+            for j in candidates.sorted() {
+                if Task.isCancelled || comparisons >= comparisonLimit { return result }
+                comparisons += 1
+                guard distance(hash, images[j].hash!) <= 6 else { continue }
                 result.append([images[j].id, images[i].id])
                 // Bound the review result, never auto-delete.
                 if result.count >= 500 { return result }

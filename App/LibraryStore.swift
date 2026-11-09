@@ -4,139 +4,215 @@ import Combine
 import UIKit
 
 @MainActor
-final class LibraryStore: ObservableObject {
-    @Published var state = LibraryState()
+final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserver {
+    @Published var state = LibraryState() { didSet { revision += 1; prepareIndex() } }
     @Published var authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @Published var scanning = false
+    @Published var refreshing = false
+    @Published var loaded = false
     @Published var busy = false
     @Published var progress = 0.0
-    @Published var status = "准备好整理你的相册"
+    @Published var status = "正在读取本地整理记录，不进行图片识别…"
     @Published var message: String?
     @Published var similar: [[String]] = []
+    @Published private(set) var index = LibraryIndex()
+    @Published private(set) var indexVersion = 0
+    @Published private(set) var visibleIDs: Set<String> = []
+    private var revision = 0
     private var scanTask: Task<Void, Never>?
-    private let saveURL: URL
+    private var saveTask: Task<Void, Never>?
+    private var indexTask: Task<Void, Never>?
+    private var indexWorker: Task<LibraryIndex, Never>?
+    private var refreshTask: Task<Void, Never>?
+    private var observers: [NSObjectProtocol] = []
+    private var registered = false
+    private var starting = false
     private var storageReadable = true
-    var records: [MediaRecord] { state.records.values.sorted { $0.date > $1.date } }
-    var active: [MediaRecord] { records.filter { !state.pending.contains($0.id) } }
+    private var metadataDirty = true
+    private let disk: LibraryDisk
+    var records: [MediaRecord] { index.records }
+    var active: [MediaRecord] { index.active }
+    var visibleActive: [MediaRecord] { index.active }
+    var visiblePending: [MediaRecord] { index.pending }
     var permitted: Bool { authorization == .authorized || authorization == .limited }
 
-    init() {
+    override init() {
         let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        saveURL = folder.appendingPathComponent("library-v1.json")
-        do {
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            if FileManager.default.fileExists(atPath: saveURL.path) {
-                state = try JSONDecoder().decode(LibraryState.self, from: Data(contentsOf: saveURL))
-            }
-        } catch {
-            storageReadable = false
-            message = "无法读取本地整理记录：\(error.localizedDescription)。已停止覆盖保存，请保留 App 数据；原图未受影响。"
+        disk = LibraryDisk(url: folder.appendingPathComponent("library-v1.json"))
+        super.init()
+        for name in [ProcessInfo.thermalStateDidChangeNotification, UIApplication.didReceiveMemoryWarningNotification] {
+            observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                Task { @MainActor in
+                    if note.name == UIApplication.didReceiveMemoryWarningNotification {
+                        PhotoAccess.clearCache(); self?.pause()
+                        self?.status = "内存紧张，扫描已暂停；已完成结果保留"
+                    } else if ProcessInfo.processInfo.thermalState != .nominal {
+                        self?.pause(); self?.status = "手机温度升高，扫描已暂停；降温后手动继续"
+                    }
+                }
+            })
         }
     }
 
-    func save() {
-        guard storageReadable else { return }
-        do {
-            let data = try JSONEncoder().encode(state)
-            try data.write(to: saveURL, options: [.atomic, .completeFileProtectionUnlessOpen])
-        } catch { message = "整理记录保存失败：\(error.localizedDescription)" }
+    func start() async {
+        guard !starting else { return }
+        guard !loaded else { refreshIfNeeded(); return }
+        starting = true
+        defer { starting = false }
+        do { state = try await disk.load() }
+        catch {
+            storageReadable = false
+            message = "无法读取整理记录，已停止覆盖保存，原图未受影响：\(error.localizedDescription)"
+        }
+        authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        if permitted {
+            status = "正在读取上次的分类结果…"
+            let snapshot = state, fullAccess = authorization == .authorized
+            let cached = await Task.detached(priority: .utility) {
+                let ids = fullAccess ? Set(snapshot.records.keys) : LibraryMetadata.visibleIdentifiers()
+                return (ids, LibraryIndex.build(state: snapshot, visible: ids))
+            }.value
+            // Recheck access before exposing cached records after the asynchronous read.
+            if PHPhotoLibrary.authorizationStatus(for: .readWrite) == authorization {
+                visibleIDs = cached.0; index = cached.1; indexVersion += 1
+            }
+        }
+        loaded = true
+        similar = state.similarPairs ?? []
+        refreshIfNeeded()
+    }
+
+    private func prepareIndex() {
+        guard loaded else { return }
+        indexTask?.cancel(); indexWorker?.cancel()
+        indexTask = Task { [weak self] in
+            do { try await Task.sleep(nanoseconds: 100_000_000) } catch { return }
+            guard let self, !Task.isCancelled else { return }
+            let snapshot = self.state, visible = self.visibleIDs, version = self.revision
+            let worker = Task.detached(priority: .utility) { LibraryIndex.build(state: snapshot, visible: visible) }
+            self.indexWorker = worker
+            let result = await worker.value
+            guard !Task.isCancelled, self.revision == version, self.visibleIDs == visible else { return }
+            self.index = result
+            self.indexVersion += 1
+        }
+    }
+
+    func save(immediately: Bool = false) {
+        guard loaded && storageReadable else { return }
+        saveTask?.cancel()
+        saveTask = Task { [weak self] in
+            if !immediately {
+                do { try await Task.sleep(nanoseconds: 800_000_000) } catch { return }
+            }
+            guard let self, !Task.isCancelled else { return }
+            let snapshot = self.state, version = self.revision
+            do { try await self.disk.write(snapshot, revision: version) }
+            catch { self.message = "整理记录保存失败：\(error.localizedDescription)" }
+        }
     }
 
     func connect() async {
         authorization = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
-        refresh()
+        if !loaded { await start() } else { refresh() }
     }
-
-    func refresh() {
-        authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-        guard permitted else { return }
-        let options = PHFetchOptions()
-        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
-        let assets = PHAsset.fetchAssets(with: options)
-        var visible: Set<String> = []
-        assets.enumerateObjects { asset, _, _ in
-            guard asset.mediaType == .image || asset.mediaType == .video else { return }
-            let id = asset.localIdentifier
-            visible.insert(id)
-            var record = self.state.records[id] ?? MediaRecord(id: id, date: asset.creationDate ?? .distantPast,
-                modified: asset.modificationDate, latitude: asset.location?.coordinate.latitude,
-                longitude: asset.location?.coordinate.longitude, isVideo: asset.mediaType == .video,
-                isScreenshot: asset.mediaSubtypes.contains(.photoScreenshot), duration: asset.duration)
-            if record.modified != asset.modificationDate {
-                record.analyzed = false
-                record.hash = nil
-                record.text = ""
-                record.tags = []
-                record.reasons = []
-                record.aiSummary = nil
+    nonisolated func photoLibraryDidChange(_ changeInstance: PHChange) {
+        Task { @MainActor [weak self] in self?.metadataDirty = true }
+    }
+    func refreshIfNeeded() {
+        let updated = PHPhotoLibrary.authorizationStatus(for: .readWrite)
+        if updated != authorization { authorization = updated; metadataDirty = true }
+        if metadataDirty { refresh(force: false) }
+    }
+    func refresh(force: Bool = true) {
+        guard loaded, permitted, !refreshing, !scanning, !busy else { return }
+        if !force && !metadataDirty { return }
+        if !registered { PHPhotoLibrary.shared().register(self); registered = true }
+        refreshing = true; metadataDirty = false
+        status = "正在后台核对相册目录，不重新识别已完成照片…"
+        refreshTask = Task { [weak self] in
+            guard let self else { return }
+            defer { self.refreshing = false }
+            let metadata = await Task.detached(priority: .utility) { LibraryMetadata.fetch() }.value
+            let ids = Set(metadata.map(\.id))
+            while !Task.isCancelled {
+                let old = self.state, version = self.revision, full = self.authorization == .authorized
+                let next = await Task.detached(priority: .utility) {
+                    LibraryMetadata.merge(metadata, into: old, fullAccess: full, retryUnavailable: force)
+                }.value
+                if version != self.revision { continue } // Preserve edits made during background fetch.
+                self.visibleIDs = ids
+                self.state = next
+                let analyzed = next.records.values.lazy.filter { ids.contains($0.id) && $0.analyzed }.count
+                self.status = "目录就绪 · \(ids.count) 项 · 已识别 \(analyzed) 项；识别只在点击扫描时运行"
+                self.save()
+                return
             }
-            record.date = asset.creationDate ?? .distantPast
-            record.modified = asset.modificationDate
-            record.latitude = asset.location?.coordinate.latitude
-            record.longitude = asset.location?.coordinate.longitude
-            record.duration = asset.duration
-            self.state.records[id] = record
         }
-        // Limited access can temporarily hide records. Do not erase their saved labels.
-        if authorization == .authorized {
-            state.forget(Set(state.records.keys).subtracting(visible))
-        }
-        visibleIDs = visible
-        status = "可访问 \(visible.count) 项 · 已分析 \(records.filter { visible.contains($0.id) && $0.analyzed }.count) 项"
-        save()
     }
 
-    @Published private(set) var visibleIDs: Set<String> = []
-    var visibleActive: [MediaRecord] { active.filter { visibleIDs.contains($0.id) } }
-    var visiblePending: [MediaRecord] { records.filter { visibleIDs.contains($0.id) && state.pending.contains($0.id) } }
-
-    func scan() {
-        guard !scanning && !busy && permitted else { return }
-        refresh()
-        scanning = true
-        progress = 0
+    func scan(screenshotsOnly: Bool = true) {
+        guard !scanning, !busy, !refreshing, loaded, permitted else { return }
+        guard ProcessInfo.processInfo.thermalState == .nominal, !ProcessInfo.processInfo.isLowPowerModeEnabled else {
+            status = "温度升高或低电量模式，暂不启动扫描"; return
+        }
+        let todo = ScanPolicy.candidates(records.compactMap { state.records[$0.id] }, screenshotsOnly: screenshotsOnly)
+        guard !todo.isEmpty else { status = "没有可处理的\(screenshotsOnly ? "截图" : "图片")；本批已完成，云端原件可下载后刷新重试"; return }
+        scanning = true; progress = 0
         scanTask = Task { [weak self] in
             guard let self else { return }
-            defer { self.scanning = false; self.save() }
-            let todo = self.records.filter { self.visibleIDs.contains($0.id) && !$0.analyzed }
-            for (index, record) in todo.enumerated() {
-                if Task.isCancelled { self.status = "扫描已暂停，下次从未完成项目继续"; return }
-                self.status = "本地识别 \(index + 1) / \(todo.count)"
-                if let image = await PhotoAccess.image(id: record.id) {
-                    do {
-                        let result = try await LocalAnalyzer.analyze(image, screenshot: record.isScreenshot, video: record.isVideo)
-                        guard !Task.isCancelled else { return }
-                        self.state.records[record.id]?.tags = result.tags
-                        self.state.records[record.id]?.text = result.text
-                        self.state.records[record.id]?.reasons = result.reasons
-                        self.state.records[record.id]?.hash = result.hash
-                        self.state.records[record.id]?.analyzed = true
-                        self.state.records[record.id]?.unavailable = false
-                    } catch {
-                        self.state.records[record.id]?.reasons = ["本次识别失败，可稍后重试"]
-                    }
-                } else {
-                    self.state.records[record.id]?.unavailable = true
+            var updates: [MediaRecord] = []
+            defer { self.commitAnalysis(updates); self.scanning = false; self.save(immediately: true) }
+            for (position, record) in todo.enumerated() {
+                if Task.isCancelled { return }
+                guard ProcessInfo.processInfo.thermalState == .nominal, !ProcessInfo.processInfo.isLowPowerModeEnabled else {
+                    self.status = "温度升高或低电量，已暂停；完成结果已保留"; return
                 }
-                self.progress = Double(index + 1) / Double(max(todo.count, 1))
-                if index % 10 == 0 { self.save() }
+                var updated = record
+                let image = await PhotoAccess.image(id: record.id, size: CGSize(width: record.isScreenshot ? 1024 : 640, height: record.isScreenshot ? 1024 : 640), highQuality: true)
+                guard !Task.isCancelled else { return }
+                if let image {
+                    do {
+                        let result = try await LocalAnalyzer.analyze(image, screenshot: record.isScreenshot, video: false)
+                        guard !Task.isCancelled else { return }
+                        updated.tags = result.tags; updated.text = String(result.text.prefix(4000))
+                        updated.reasons = result.reasons; updated.hash = result.hash
+                        updated.analyzed = true; updated.unavailable = false
+                    } catch { updated.reasons = ["本次识别失败，下次可重试"] }
+                } else { updated.unavailable = true }
+                updates.append(updated)
+                if updates.count >= 5 { self.commitAnalysis(updates); updates.removeAll(keepingCapacity: true); self.save() }
+                self.progress = Double(position + 1) / Double(todo.count)
+                self.status = "本批识别 \(position + 1)/\(todo.count) · 已完成结果会保存"
+                do { try await Task.sleep(nanoseconds: 100_000_000) } catch { return }
             }
-            let snapshots = self.records.filter { self.visibleIDs.contains($0.id) }
-            let pairs = await Task.detached(priority: .utility) { Similarity.pairs(snapshots) }.value
-            if Task.isCancelled { return }
-            self.similar = pairs
-            self.rebuildTrips()
-            self.progress = 1
-            self.status = "扫描完成 · \(self.similar.count) 组疑似相似照片"
+            self.status = "本批 \(todo.count) 张处理结束；可继续下一批，不重扫已识别照片"
         }
     }
-    func pause() { scanTask?.cancel() }
+    private func commitAnalysis(_ updates: [MediaRecord]) {
+        guard !updates.isEmpty else { return }
+        var next = state
+        for value in updates {
+            guard var record = next.records[value.id] else { continue }
+            record.tags = value.tags; record.text = value.text; record.reasons = value.reasons
+            record.hash = value.hash; record.analyzed = value.analyzed; record.unavailable = value.unavailable
+            next.records[value.id] = record // Preserve current manual edits.
+        }
+        state = next
+    }
+    func pause() { scanTask?.cancel(); if scanning { status = "暂停中；已完成的识别结果会保留" } }
 
     func stage(_ id: String) { state.stage(id); save() }
     func restore(_ id: String) {
         state.pending.remove(id)
         if state.lastStaged == id { state.lastStaged = nil }
         save()
+    }
+    func restoreAllPending() {
+        var next = state
+        next.pending.subtract(visibleIDs)
+        next.lastStaged = nil
+        state = next; save()
     }
     func undo() { state.undo(); save() }
     func setTag(_ id: String, _ tag: PhotoTag, enabled: Bool) {
@@ -154,13 +230,10 @@ final class LibraryStore: ObservableObject {
         save()
     }
     var allKeywords: [String] {
-        Array(Set(visibleActive.flatMap(\.customTags))).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        index.keywords
     }
     func tagLabels(for record: MediaRecord) -> [String] {
-        let category = PhotoTag.allCases.filter { record.effectiveTags.contains($0) }.map(\.rawValue)
-        let people = state.people.filter { record.people.contains($0.id) }.map(\.name)
-        let trips = state.trips.filter { $0.members.contains(record.id) }.map(\.name)
-        return TagNames.normalized(record.customTags + people + trips + category)
+        index.labels[record.id] ?? record.effectiveTags.map(\.rawValue)
     }
     func addPerson(_ name: String) {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -173,8 +246,9 @@ final class LibraryStore: ObservableObject {
         save()
     }
     func associatePerson(_ person: UUID, ids: [String]) {
-        for id in ids where visibleIDs.contains(id) { state.records[id]?.people.insert(person) }
-        save()
+        var next = state
+        for id in ids where visibleIDs.contains(id) { next.records[id]?.people.insert(person) }
+        state = next; save()
     }
     func applyAI(_ suggestion: AISuggestion, id: String) {
         guard visibleIDs.contains(id), state.records[id] != nil else {
@@ -191,17 +265,32 @@ final class LibraryStore: ObservableObject {
         save()
     }
     func rebuildTrips() {
-        let existing = state.trips
-        let proposed = TripBuilder.candidates(records.filter { visibleIDs.contains($0.id) })
-        var result = existing.filter(\.manual)
-        for var trip in proposed {
-            if result.contains(where: { !$0.members.isDisjoint(with: trip.members) }) { continue }
-            if let old = existing.first(where: { !$0.manual && !$0.members.isDisjoint(with: trip.members) }) {
-                trip.id = old.id
+        guard !busy, !scanning, !refreshing else { return }
+        busy = true
+        let snapshot = records
+        Task {
+            let proposed = await Task.detached(priority: .utility) { TripBuilder.candidates(snapshot) }.value
+            let existing = state.trips
+            var result = existing.filter(\.manual)
+            for var trip in proposed {
+                if result.contains(where: { !$0.members.isDisjoint(with: trip.members) }) { continue }
+                if let old = existing.first(where: { !$0.manual && !$0.members.isDisjoint(with: trip.members) }) { trip.id = old.id }
+                result.append(trip)
             }
-            result.append(trip)
+            state.trips = result; busy = false; save()
         }
-        state.trips = result
+    }
+    func findSimilar() {
+        guard !busy, !scanning, !refreshing else { return }
+        guard ProcessInfo.processInfo.thermalState == .nominal else { status = "请等待手机降温后再查重"; return }
+        busy = true
+        let snapshot = visibleActive
+        Task {
+            let pairs = await Task.detached(priority: .utility) { Similarity.pairs(snapshot) }.value
+            similar = pairs
+            state.similarPairs = pairs
+            busy = false; save()
+        }
     }
     func createTrip(name: String, start: Date, end: Date) {
         guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
@@ -225,14 +314,12 @@ final class LibraryStore: ObservableObject {
 
     func matches(_ record: MediaRecord, query: String) -> Bool {
         let words = query.lowercased().split(whereSeparator: \.isWhitespace)
-        let names = state.people.filter { record.people.contains($0.id) }.map(\.name)
-        let trips = state.trips.filter { $0.members.contains(record.id) }.map(\.name)
-        let content = ([record.text, record.aiSummary ?? ""] + record.customTags + record.effectiveTags.map(\.rawValue) + names + trips).joined(separator: " ").lowercased()
+        let content = index.search[record.id] ?? ""
         return words.allSatisfy { content.contains($0) }
     }
 
     func exportAlbum(name: String, ids: [String]) async {
-        guard !busy && !scanning else { message = "请先暂停扫描，再创建系统相册。"; return }
+        guard !busy && !scanning && !refreshing else { message = "请先等待目录读取或暂停扫描。"; return }
         let assets = PHAsset.fetchAssets(withLocalIdentifiers: ids.filter { visibleIDs.contains($0) }, options: nil)
         guard assets.count > 0 else { return }
         busy = true
@@ -247,7 +334,7 @@ final class LibraryStore: ObservableObject {
     }
 
     func deletePending() async {
-        guard !busy && !scanning else { message = "请先暂停扫描，再提交删除。"; return }
+        guard !busy && !scanning && !refreshing else { message = "请先等待目录读取或暂停扫描。"; return }
         let ids = Set(visiblePending.map(\.id))
         guard !ids.isEmpty else { return }
         let assets = PHAsset.fetchAssets(withLocalIdentifiers: Array(ids), options: nil)
@@ -255,12 +342,12 @@ final class LibraryStore: ObservableObject {
         var actual: Set<String> = []
         assets.enumerateObjects { asset, _, _ in actual.insert(asset.localIdentifier) }
         busy = true
-        defer { busy = false }
+        defer { busy = false; refreshIfNeeded() }
         do {
             try await PHPhotoLibrary.shared().performChanges { PHAssetChangeRequest.deleteAssets(assets) }
             state.forget(actual)
             similar.removeAll { !$0.allSatisfy { state.records[$0] != nil } }
-            save(); refresh()
+            save(); metadataDirty = true
             message = "系统已接受删除。可在苹果照片的「最近删除」中恢复。"
         } catch { message = "没有完成删除，待删队列已保留：\(error.localizedDescription)" }
     }

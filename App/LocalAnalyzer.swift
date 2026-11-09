@@ -18,18 +18,23 @@ enum LocalAnalyzer {
                 autoreleasepool {
                     do {
                         guard let cg = image.cgImage else { throw AnalyzerError.invalidImage }
-                        let textRequest = VNRecognizeTextRequest()
-                        textRequest.recognitionLevel = .accurate
-                        textRequest.recognitionLanguages = ["zh-Hans", "en-US"]
-                        textRequest.usesLanguageCorrection = true
                         let faces = VNDetectFaceRectanglesRequest()
                         let classification = VNClassifyImageRequest()
                         let handler = VNImageRequestHandler(cgImage: cg, options: [:])
-                        try handler.perform([textRequest, faces, classification])
-                        let text = (textRequest.results ?? []).compactMap { $0.topCandidates(1).first?.string }
-                            .joined(separator: "\n")
+                        try handler.perform([faces, classification])
                         let labels = (classification.results ?? []).filter { $0.confidence >= 0.2 }
                             .prefix(12).map(\.identifier)
+                        var text = ""
+                        // Most camera photos do not need expensive OCR. Screenshots and
+                        // document-like photos keep accurate Chinese OCR.
+                        if screenshot || labels.contains(where: { $0.contains("document") || $0.contains("receipt") || $0.contains("text") }) {
+                            let textRequest = VNRecognizeTextRequest()
+                            textRequest.recognitionLevel = .accurate
+                            textRequest.recognitionLanguages = ["zh-Hans", "en-US"]
+                            textRequest.usesLanguageCorrection = false
+                            try handler.perform([textRequest])
+                            text = (textRequest.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
+                        }
                         let (tags, reasons) = CategoryRules.classify(text: text, screenshot: screenshot,
                             faces: faces.results?.count ?? 0, labels: labels, isVideo: video)
                         continuation.resume(returning: AnalysisResult(tags: tags, text: text,
@@ -63,21 +68,4 @@ enum LocalAnalyzer {
         }
     }
     enum AnalyzerError: Error { case invalidImage }
-}
-
-enum PhotoAccess {
-    static func image(id: String, size: CGSize = CGSize(width: 1400, height: 1400)) async -> UIImage? {
-        guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil).firstObject else { return nil }
-        return await withCheckedContinuation { continuation in
-            let options = PHImageRequestOptions()
-            options.isNetworkAccessAllowed = false
-            options.deliveryMode = .highQualityFormat
-            options.resizeMode = .fast
-            PHImageManager.default().requestImage(for: asset, targetSize: size,
-                contentMode: .aspectFit, options: options) { image, info in
-                if (info?[PHImageResultIsDegradedKey] as? Bool) == true { return }
-                continuation.resume(returning: image)
-            }
-        }
-    }
 }

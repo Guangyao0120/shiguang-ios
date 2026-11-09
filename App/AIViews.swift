@@ -147,10 +147,7 @@ struct AIOrganizeView: View {
     @State private var running = false
     @State private var requestTask: Task<Void, Never>?
     @State private var reviewed = false
-    var matches: [MediaRecord] {
-        guard let plan else { return [] }
-        return store.visibleActive.filter { plan.matches($0, people: store.state.people, trips: store.state.trips) }
-    }
+    @State private var matches: [MediaRecord] = []
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -197,7 +194,15 @@ struct AIOrganizeView: View {
         }.navigationTitle("AI 整理").navigationBarTitleDisplayMode(.inline)
             .toolbar { NavigationLink { AISettingsView() } label: { Image(systemName: "gearshape") } }
             .onChange(of: command) { _, _ in plan = nil; reviewed = false }
-            .onChange(of: matches.map(\.id)) { _, _ in reviewed = false }
+            .task(id: AIQueryKey(plan: plan, revision: store.indexVersion)) {
+                reviewed = false
+                guard let plan else { matches = []; return }
+                let snapshot = store.index, people = store.state.people, trips = store.state.trips
+                let result = await Task.detached(priority: .utility) {
+                    snapshot.active.filter { plan.matches($0, people: people, trips: trips) }
+                }.value
+                if !Task.isCancelled { matches = result }
+            }
             .onDisappear { requestTask?.cancel() }
     }
     private func generate() {
@@ -214,3 +219,7 @@ struct AIOrganizeView: View {
     }
 }
 
+private struct AIQueryKey: Equatable {
+    let plan: AIPlan?
+    let revision: Int
+}
