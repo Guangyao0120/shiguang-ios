@@ -72,6 +72,28 @@ final class ReviewUITests: XCTestCase {
         app.launchArguments = ["-AppleLanguages","(zh-Hans)","-AppleLocale","zh_CN","-appLanguage","zh-Hans","-onboardingComplete","YES","-onboardingInProgress","NO"]
         app.launch()
         let all = app.buttons["collection.all"]
+        if !all.waitForExistence(timeout:3) {
+            let authorize = app.buttons["前往系统设置授权"]
+            if authorize.exists {
+                authorize.tap()
+                let settings = XCUIApplication(bundleIdentifier:"com.apple.Preferences")
+                let photosSetting = settings.descendants(matching:.any).matching(NSPredicate(format:"label IN %@",["Photos","照片"])).firstMatch
+                XCTAssertTrue(photosSetting.waitForExistence(timeout:12)); photosSetting.tap()
+                let full = settings.descendants(matching:.any).matching(NSPredicate(format:"label IN %@",["Full Access","完全访问","所有照片","全部照片"])).firstMatch
+                XCTAssertTrue(full.waitForExistence(timeout:10)); full.tap()
+                let springboard = XCUIApplication(bundleIdentifier:"com.apple.springboard")
+                if springboard.alerts.firstMatch.waitForExistence(timeout:2) {
+                    let allow = springboard.alerts.buttons.matching(NSPredicate(format:"label IN %@",["Allow Full Access","允许完全访问","允许访问所有照片"])).firstMatch
+                    XCTAssertTrue(allow.exists); allow.tap()
+                }
+                app.activate()
+            } else {
+                let choose = app.buttons["选择可整理的照片"]
+                XCTAssertTrue(choose.waitForExistence(timeout:5)); choose.tap()
+                let allow = XCUIApplication(bundleIdentifier:"com.apple.springboard").alerts.buttons.matching(NSPredicate(format:"label IN %@",["Allow Full Access","允许完全访问","允许访问所有照片"])).firstMatch
+                XCTAssertTrue(allow.waitForExistence(timeout:10)); allow.tap()
+            }
+        }
         XCTAssertTrue(all.waitForExistence(timeout:25)); all.tap()
         let photos = app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@ AND NOT identifier BEGINSWITH %@","media.open.","media.open.preview-"))
         XCTAssertTrue(photos.element(boundBy:0).waitForExistence(timeout:15)); photos.element(boundBy:0).tap()
@@ -79,6 +101,7 @@ final class ReviewUITests: XCTestCase {
         XCTAssertTrue(photo.waitForExistence(timeout:15))
         expectation(for:NSPredicate(format:"value == %@","清晰照片已就绪"),evaluatedWith:photo)
         waitForExpectations(timeout:20)
+        let loaded = XCTAttachment(screenshot:app.screenshot()); loaded.name = "PhotoKit-clear-image"; loaded.lifetime = .keepAlways; add(loaded)
         drag(app,dx:0,dy:-0.6)
         app.buttons["review.done"].tap()
         app.navigationBars.buttons.element(boundBy:0).tap()
