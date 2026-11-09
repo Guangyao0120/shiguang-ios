@@ -65,6 +65,40 @@ final class ReviewUITests: XCTestCase {
     }
 
     @MainActor
+    func testSystemPhotoLibraryLoadsClearImageAndCancellationKeepsSelectedPendingPhoto() {
+        executionTimeAllowance = 180
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages","(zh-Hans)","-AppleLocale","zh_CN","-appLanguage","zh-Hans","-onboardingComplete","YES","-onboardingInProgress","NO"]
+        app.launch()
+        let all = app.buttons["collection.all"]
+        XCTAssertTrue(all.waitForExistence(timeout:25)); all.tap()
+        let photos = app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","media.open."))
+        XCTAssertTrue(photos.element(boundBy:0).waitForExistence(timeout:15)); photos.element(boundBy:0).tap()
+        let photo = app.descendants(matching:.any).matching(identifier:"review.photo").firstMatch
+        XCTAssertTrue(photo.waitForExistence(timeout:15))
+        expectation(for:NSPredicate(format:"value == %@","清晰照片已就绪"),evaluatedWith:photo)
+        waitForExpectations(timeout:20)
+        drag(app,dx:0,dy:-0.6)
+        app.buttons["review.done"].tap()
+        app.navigationBars.buttons.element(boundBy:0).tap()
+        app.tabBars.buttons["待删"].tap()
+        let choices = app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","pending.select."))
+        XCTAssertTrue(choices.firstMatch.waitForExistence(timeout:12)); choices.firstMatch.tap()
+        let delete = app.buttons["pending.delete"]
+        XCTAssertTrue(delete.isEnabled); XCTAssertTrue(delete.isHittable); delete.tap()
+        let springboard = XCUIApplication(bundleIdentifier:"com.apple.springboard")
+        let alert = springboard.alerts.firstMatch
+        XCTAssertTrue(alert.waitForExistence(timeout:15),"Expected actual PhotoKit deletion confirmation")
+        let cancel = alert.buttons.matching(NSPredicate(format:"label IN %@",["Don’t Allow","Don't Allow","不允许","Cancel","取消"])).firstMatch
+        XCTAssertTrue(cancel.exists); cancel.tap()
+        if app.alerts.firstMatch.waitForExistence(timeout:5) { app.alerts.firstMatch.buttons.element(boundBy:0).tap() }
+        XCTAssertTrue(choices.firstMatch.waitForExistence(timeout:10))
+        XCTAssertEqual(app.buttons["pending.delete"].label,"删除所选 1 项")
+        app.buttons["恢复所选 1 项"].tap()
+        app.terminate()
+    }
+
+    @MainActor
     private func checkRoute(tab: String, entry: String, prefix: Bool) {
         let app = XCUIApplication()
         app.launchEnvironment["SHIGUANG_DESIGN_PREVIEW"] = "1"

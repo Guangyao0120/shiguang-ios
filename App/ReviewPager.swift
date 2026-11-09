@@ -127,6 +127,7 @@ private final class ReviewScrollView: UIView, UIGestureRecognizerDelegate {
             cards[0].alpha = 0; cards[2].alpha = 0
         }
         accessibilityLabel = L.t(video ? "视频" : "照片")
+        accessibilityValue = images[current] == nil ? L.t("照片尚未就绪") : L.t("清晰照片已就绪")
         for (i,id) in [previous,Optional(current),next].enumerated() {
             cards[i].image = id.flatMap { images[$0] }
             if let id { notes[i].text = cards[i].image == nil ? L.t(failed.contains(id) ? "图片暂不可用，请点查看清晰" : "正在读取清晰照片…") : nil }

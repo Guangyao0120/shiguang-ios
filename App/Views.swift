@@ -149,7 +149,7 @@ struct HomeView: View {
                 } else {
                     NavigationLink { CollectionView(title: "全部照片与视频", scope: .all) } label: {
                         Label("查看全部照片与视频", systemImage: "photo.on.rectangle").frame(maxWidth: .infinity, alignment: .leading)
-                    }.buttonStyle(.bordered)
+                    }.buttonStyle(.bordered).accessibilityIdentifier("collection.all")
                     Text("分类").font(.title3.weight(.medium))
                     LazyVGrid(columns: columns, spacing: 12) {
                         ForEach(PhotoTag.allCases) { tag in
