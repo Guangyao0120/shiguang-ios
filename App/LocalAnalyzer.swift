@@ -53,6 +53,21 @@ enum LocalAnalyzer {
         }
     }
 
+    static func sceneryLabels(_ image: UIImage, cpuOnly: Bool) async throws -> [String] {
+        try await withCheckedThrowingContinuation { continuation in
+            queue.async {
+                autoreleasepool {
+                    do {
+                        guard let cg = image.cgImage else { throw AnalyzerError.invalidImage }
+                        classification.usesCPUOnly = cpuOnly
+                        try VNImageRequestHandler(cgImage:cg,orientation:image.visionOrientation,options:[:]).perform([classification])
+                        continuation.resume(returning:Array((classification.results ?? []).filter { $0.confidence >= 0.2 }.prefix(12).map(\.identifier)))
+                    } catch { continuation.resume(throwing:error) }
+                }
+            }
+        }
+    }
+
     private static func differenceHash(_ image: CGImage) -> UInt64? {
         var pixels = [UInt8](repeating: 0, count: 9 * 8)
         return pixels.withUnsafeMutableBytes { buffer -> UInt64? in

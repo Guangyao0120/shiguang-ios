@@ -4,6 +4,17 @@ import UIKit
 @testable import Shiguang
 
 final class RulesTests: XCTestCase {
+    func testLegacySceneryRefinesOnceWithoutRepeatingCompletedOCR() {
+        var old = media("old"); old.tags = [.scenery]; old.analyzed = true; old.text = "Keep OCR"
+        let unprocessed = media("new")
+        XCTAssertTrue(old.needsSceneryRefinement)
+        XCTAssertEqual(ScanPolicy.candidates([unprocessed,old],screenshotsOnly:false,limit:1).map(\.id),["old"])
+        old.visualLabels = []
+        XCTAssertFalse(old.needsSceneryRefinement)
+        XCTAssertEqual(ScanPolicy.candidates([old,unprocessed],screenshotsOnly:false,limit:10).map(\.id),["new"])
+        XCTAssertEqual(old.text,"Keep OCR")
+    }
+
 
     func testLegacyBillsShareOneCategoryAndManualRemovalStillWorks() throws {
         var record = media("bill")
@@ -54,6 +65,10 @@ final class RulesTests: XCTestCase {
             XCTAssertEqual(session.ids[previous],"a")
         }
         XCTAssertEqual(ReviewSession(ids:["a","a","b"]).ids,["a","b"])
+        XCTAssertFalse(ReviewNavigation.advanceAfterPreview(id:"a",current:"a",wasPending:true,pending:["a"]))
+        XCTAssertFalse(ReviewNavigation.advanceAfterPreview(id:"a",current:"a",wasPending:false,pending:[]))
+        XCTAssertTrue(ReviewNavigation.advanceAfterPreview(id:"a",current:"a",wasPending:false,pending:["a"]))
+        XCTAssertFalse(ReviewNavigation.advanceAfterPreview(id:"a",current:"b",wasPending:false,pending:["a"]))
     }
     func testDiskMigratesLegacyJSONWithoutOverwritingItsBackup() async throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

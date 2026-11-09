@@ -481,6 +481,9 @@ struct ReviewView: View {
     @State private var index = 0
     @State private var offset: CGSize = .zero
     @State private var showingOriginal = false
+    @State private var originalID: String?
+    @State private var originalWasPending = false
+    @State private var hasAppeared = false
     private var current: String? { index < ids.count ? ids[index] : nil }
     var body: some View {
         VStack(spacing: 18) {
@@ -502,7 +505,9 @@ struct ReviewView: View {
                 Text("左滑下一张 · 右滑上一张 · 上滑待删").font(.footnote).foregroundStyle(Palette.secondary)
                 HStack {
                     if store.state.records[current]?.isVideo != true {
-                        Button("查看清晰", systemImage: "arrow.up.left.and.arrow.down.right") { showingOriginal = true }
+                        Button("查看清晰", systemImage: "arrow.up.left.and.arrow.down.right") {
+                            originalID = current; originalWasPending = store.state.pending.contains(current); showingOriginal = true
+                        }
                             .buttonStyle(.bordered)
                     }
                     Button("下一张") { next() }.buttonStyle(.bordered)
@@ -524,9 +529,12 @@ struct ReviewView: View {
             }.disabled(store.state.lastStaged == nil)
         }.padding().background(canvas).navigationTitle("连续整理").navigationBarTitleDisplayMode(.inline)
             .toolbar { Button("完成") { dismiss() } }
-            .onAppear { skipPending() }
-            .fullScreenCover(isPresented: $showingOriginal, onDismiss: { skipPending() }) {
-                if let current { OriginalPhotoView(id: current) }
+            .onAppear { if !hasAppeared { hasAppeared = true; skipPending() } }
+            .fullScreenCover(isPresented: $showingOriginal, onDismiss: {
+                if ReviewNavigation.advanceAfterPreview(id:originalID,current:current,wasPending:originalWasPending,pending:store.state.pending) { next() }
+                originalID = nil
+            }) {
+                if let originalID { OriginalPhotoView(id: originalID) }
             }
     }
     private func stageCurrent() {

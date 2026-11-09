@@ -77,6 +77,10 @@ struct MediaRecord: Codable, Identifiable, Equatable {
         return result.isEmpty ? [.other] : result
     }
     var customTags: [String] { TagNames.normalized(keywords ?? []) }
+    var needsSceneryRefinement: Bool {
+        analyzed && tags.contains(.scenery) && visualLabels == nil && !removedTags.contains(.scenery)
+            && addedTags.isDisjoint(with:[.cityScenery,.naturalScenery])
+    }
 }
 
 enum TagNames {

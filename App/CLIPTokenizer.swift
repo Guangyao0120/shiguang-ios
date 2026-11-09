@@ -59,6 +59,10 @@ struct CLIPTokenizer {
 }
 
 enum ReviewNavigation {
+    static func advanceAfterPreview(id: String?, current: String?, wasPending: Bool, pending: Set<String>) -> Bool {
+        guard let id, id == current else { return false }
+        return !wasPending && pending.contains(id)
+    }
     static func next(from: Int, ids: [String], existing: Set<String>, pending: Set<String>) -> Int {
         var index = min(ids.count, from + 1)
         while index < ids.count && (!existing.contains(ids[index]) || pending.contains(ids[index])) { index += 1 }

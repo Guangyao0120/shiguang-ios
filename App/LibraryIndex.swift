@@ -55,9 +55,15 @@ struct LibraryIndex {
 
 enum ScanPolicy {
     static func candidates(_ records: [MediaRecord], screenshotsOnly: Bool, limit: Int = 100) -> [MediaRecord] {
-        Array(records.lazy.filter {
-            !$0.analyzed && !$0.isVideo && !$0.unavailable && (!screenshotsOnly || $0.isScreenshot)
-        }.prefix(max(0, limit)))
+        guard limit > 0 else { return [] }
+        func eligible(_ record: MediaRecord) -> Bool {
+            !record.isVideo && !record.unavailable && (!screenshotsOnly || record.isScreenshot)
+        }
+        var result = Array(records.lazy.filter { $0.needsSceneryRefinement && eligible($0) }.prefix(limit))
+        if result.count < limit {
+            result += records.lazy.filter { !$0.analyzed && eligible($0) }.prefix(limit-result.count)
+        }
+        return result
     }
 }
 

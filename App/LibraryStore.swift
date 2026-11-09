@@ -230,13 +230,20 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
                 if let image {
                     do {
                         let analyzing = Date()
-                        let result = try await LocalAnalyzer.analyze(image, screenshot: record.isScreenshot, video: false, cpuOnly: UIApplication.shared.applicationState != .active)
+                        if record.needsSceneryRefinement {
+                            let labels = try await LocalAnalyzer.sceneryLabels(image,cpuOnly:UIApplication.shared.applicationState != .active)
+                            updated.visualLabels = labels
+                            updated.tags.remove(.scenery)
+                            updated.tags.formUnion(CategoryRules.sceneryTags(labels))
+                        } else {
+                            let result = try await LocalAnalyzer.analyze(image, screenshot: record.isScreenshot, video: false, cpuOnly: UIApplication.shared.applicationState != .active)
+                            updated.tags = result.tags; updated.text = String(result.text.prefix(4000))
+                            updated.reasons = result.reasons; updated.hash = result.hash; updated.visualLabels = result.labels
+                        }
                         guard !Task.isCancelled else { return }
                         measurements.visionSeconds += Date().timeIntervalSince(analyzing)
                         measurements.recognized += 1
                         if record.isScreenshot { measurements.screenshots += 1 }
-                        updated.tags = result.tags; updated.text = String(result.text.prefix(4000))
-                        updated.reasons = result.reasons; updated.hash = result.hash; updated.visualLabels = result.labels
                         updated.analyzed = true; updated.unavailable = false
                     } catch { updated.reasons = ["本次识别失败，下次可重试"] }
                 } else {
@@ -259,7 +266,7 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
                 if Date().timeIntervalSince(lastFeedback) >= 0.5 || position + 1 == todo.count {
                     self.progress = Double(position + 1) / Double(todo.count)
                     self.scanRate = Double(measurements.recognized) / max(0.001,Date().timeIntervalSince(started))
-                    self.status = "正在整理 · \(position + 1)/\(todo.count)"
+                    self.status = "\(record.needsSceneryRefinement ? "细分风光" : "正在整理") · \(position + 1)/\(todo.count)"
                     lastFeedback = Date()
                 }
                 await Task.yield()

@@ -123,7 +123,7 @@ actor LibraryDisk {
             for record in state.records.values {
                 if record.analyzed { analyzed += 1 }
                 if record.unavailable { unavailable += 1 }
-                if !record.analyzed && !record.unavailable && !record.isVideo {
+                if (!record.analyzed || record.needsSceneryRefinement) && !record.unavailable && !record.isVideo {
                     pendingImages += 1; if record.isScreenshot { pendingScreenshots += 1 }
                 }
             }
