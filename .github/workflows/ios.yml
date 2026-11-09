@@ -1,0 +1,57 @@
+name: iOS build and tests
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'App/**'
+      - 'Tests/**'
+      - 'Shiguang.xcodeproj/**'
+      - '.github/workflows/ios.yml'
+permissions:
+  contents: read
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  simulator:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Locate project
+        run: |
+          PROJECT=$(find "$GITHUB_WORKSPACE" -name Shiguang.xcodeproj -type d -print -quit)
+          test -n "$PROJECT"
+          echo "SHIGUANG_PROJECT=$PROJECT" >> "$GITHUB_ENV"
+      - name: Build for generic simulator
+        run: |
+          set -o pipefail
+          xcodebuild -project "$SHIGUANG_PROJECT" -scheme Shiguang -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/ShiguangBuild" CODE_SIGNING_ALLOWED=NO build 2>&1 | tee "$RUNNER_TEMP/build.log"
+      - name: Run unit tests on available iPhone
+        run: |
+          set -o pipefail
+          DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import sys,json; d=json.load(sys.stdin); print(next(x["udid"] for k,v in d["devices"].items() if "iOS" in k for x in v if "iPhone" in x["name"]))')
+          xcodebuild -project "$SHIGUANG_PROJECT" -scheme Shiguang -destination "platform=iOS Simulator,id=$DEVICE_ID" -derivedDataPath "$RUNNER_TEMP/ShiguangBuild" -resultBundlePath "$RUNNER_TEMP/TestResults.xcresult" CODE_SIGNING_ALLOWED=NO test 2>&1 | tee "$RUNNER_TEMP/tests.log"
+      - name: Package simulator app
+        if: success()
+        run: |
+          cd "$RUNNER_TEMP/ShiguangBuild/Build/Products/Debug-iphonesimulator"
+          ditto -c -k --sequesterRsrc --keepParent Shiguang.app "$RUNNER_TEMP/Shiguang-Simulator.zip"
+      - name: Upload simulator app (not installable on iPhone)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Shiguang-Simulator
+          path: ${{ runner.temp }}/Shiguang-Simulator.zip
+          retention-days: 7
+      - name: Upload build and test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Shiguang-Build-Reports
+          path: |
+            ${{ runner.temp }}/build.log
+            ${{ runner.temp }}/tests.log
+            ${{ runner.temp }}/TestResults.xcresult
+          retention-days: 7
