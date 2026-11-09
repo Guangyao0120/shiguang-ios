@@ -161,7 +161,9 @@ final class ReviewUITests: XCTestCase {
                     let allow = springboard.alerts.buttons.matching(NSPredicate(format:"label IN %@",["Allow Full Access","允许完全访问","允许访问所有照片"])).firstMatch
                     XCTAssertTrue(allow.exists); allow.tap()
                 }
-                app.activate()
+                // Changing Photos access can terminate the simulator app. A
+                // fresh launch reapplies this test's onboarding/locale arguments.
+                app.terminate(); app.launch()
             } else {
                 let choose = app.buttons["选择可整理的照片"]
                 XCTAssertTrue(choose.waitForExistence(timeout:5)); choose.tap()
@@ -220,11 +222,13 @@ final class ReviewUITests: XCTestCase {
         app.buttons["review.clear"].tap()
         let close = app.buttons["review.preview.close"]
         XCTAssertTrue(close.waitForExistence(timeout:10)); close.tap()
+        waitForPreviewDismissal(close)
         assertPosition(1,counter:counter)
         drag(app,dx:-0.6,dy:0); assertPosition(2,counter:counter)
         checkControls(app) // Next page is a still image: same buttons/positions.
         app.buttons["review.clear"].tap()
         XCTAssertTrue(close.waitForExistence(timeout:10)); close.tap()
+        waitForPreviewDismissal(close)
         assertPosition(2,counter:counter)
         drag(app,dx:0.6,dy:0); assertPosition(1,counter:counter)
         for _ in 0..<3 {
@@ -250,6 +254,11 @@ final class ReviewUITests: XCTestCase {
         XCTAssertLessThan(stage.frame.maxY,app.frame.maxY-15)
     }
     @MainActor
+    private func waitForPreviewDismissal(_ close: XCUIElement) {
+        expectation(for:NSPredicate(format:"exists == false"),evaluatedWith:close)
+        waitForExpectations(timeout:8)
+    }
+    @MainActor
     private func assertPosition(_ position: Int,counter: XCUIElement) {
         let predicate = NSPredicate(format:"label BEGINSWITH %@","\(position) /")
         expectation(for:predicate,evaluatedWith:counter)
@@ -261,6 +270,6 @@ final class ReviewUITests: XCTestCase {
         XCTAssertTrue(photo.isHittable)
         let from = photo.coordinate(withNormalizedOffset:CGVector(dx:dx>0 ? 0.2 : 0.8,dy:dy<0 ? 0.8 : 0.5))
         let to = photo.coordinate(withNormalizedOffset:CGVector(dx:dx>0 ? 0.8 : (dx<0 ? 0.2 : 0.8),dy:dy<0 ? 0.2 : 0.5))
-        from.press(forDuration:0.05,thenDragTo:to)
+        from.press(forDuration:0.15,thenDragTo:to)
     }
 }
