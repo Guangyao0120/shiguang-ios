@@ -270,7 +270,7 @@ struct CollectionView: View {
             } label: { Image(systemName: "ellipsis.circle") }
         }
         .sheet(item: $reviewSession) { session in
-            NavigationStack { ReviewView(ids: session.ids) }
+            NavigationStack { ReviewView(ids:session.ids,startID:session.startID) }
                 .presentationDetents([.large]).presentationDragIndicator(.hidden)
         }
         .alert("行程名称", isPresented: $renaming) {
@@ -286,55 +286,53 @@ struct MediaGrid: View {
     var records: [MediaRecord]
     var selection: Binding<Set<String>>? = nil
     @State private var displayLimit = 120
+    @State private var review: ReviewSession?
+    @State private var preview: ReviewPreview?
     var body: some View {
-        if records.isEmpty {
-            ContentUnavailableView("暂无照片", systemImage: "photo")
-        } else {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 4)], spacing: 4) {
-                ForEach(Array(records.prefix(displayLimit))) { record in
-                    NavigationLink { DetailView(id: record.id) } label: {
-                        VStack(alignment: .leading, spacing: 5) {
-                        Thumbnail(id: record.id)
-                            .frame(height: 125).frame(maxWidth: .infinity).clipped()
-                            .overlay(alignment: .bottomTrailing) {
-                                if record.isVideo {
-                                    Label("\(Int(record.duration))秒", systemImage: "play.fill")
-                                        .font(.caption2).padding(5).background(.black.opacity(0.55), in: Capsule()).foregroundStyle(.white).padding(4)
-                                }
-                            }.clipShape(RoundedRectangle(cornerRadius: 10))
-                            let labels = store.tagLabels(for: record)
-                            if let title = record.videoTitle, record.isVideo {
-                                Text(title).font(.caption.weight(.medium)).foregroundStyle(Palette.ink).lineLimit(1)
-                            }
-                            Text(labels.prefix(2).map { "#" + $0 }.joined(separator: " "))
-                                .font(.caption2).foregroundStyle(Palette.secondary).lineLimit(1)
-
-                        }
-                    }.buttonStyle(.plain)
-                    .disabled(selection != nil)
-                    .overlay {
-                        if let selection {
-                            Button {
+        VStack {
+            if records.isEmpty { ContentUnavailableView("暂无照片",systemImage:"photo") }
+            else {
+                LazyVGrid(columns:[GridItem(.adaptive(minimum:100),spacing:4)],spacing:4) {
+                    ForEach(Array(records.prefix(displayLimit))) { record in
+                        Button {
+                            if let selection {
                                 if selection.wrappedValue.contains(record.id) { selection.wrappedValue.remove(record.id) }
                                 else { selection.wrappedValue.insert(record.id) }
-                            } label: {
-                                Rectangle().fill(.clear).contentShape(Rectangle())
+                            } else { review = ReviewSession(ids:records.map(\.id),startID:record.id) }
+                        } label: {
+                            VStack(alignment:.leading,spacing:5) {
+                                Thumbnail(id:record.id).frame(height:125).frame(maxWidth:.infinity).clipped()
                                     .overlay(alignment:.topTrailing) {
-                                        Image(systemName:selection.wrappedValue.contains(record.id) ? "checkmark.circle.fill" : "circle")
-                                            .font(.title2).foregroundStyle(.white,Palette.accent)
-                                            .shadow(radius:2).padding(8)
+                                        if let selection {
+                                            Image(systemName:selection.wrappedValue.contains(record.id) ? "checkmark.circle.fill" : "circle")
+                                                .font(.title2.bold()).foregroundStyle(.white)
+                                                .padding(4).background(Palette.accent,in:Circle()).padding(6)
+                                        }
                                     }
-                            }.buttonStyle(.plain)
-                            .accessibilityLabel(selection.wrappedValue.contains(record.id) ? "取消选择" : "选择照片")
-                            .accessibilityIdentifier("pending.select." + record.id)
-                        }
+                                    .overlay(alignment:.bottomTrailing) {
+                                        if record.isVideo { Image(systemName:"play.fill").foregroundStyle(.white).padding(6).background(.black.opacity(0.55),in:Capsule()).padding(4) }
+                                    }.clipShape(RoundedRectangle(cornerRadius:10))
+                                Text(store.tagLabels(for:record).prefix(2).map { "#"+$0 }.joined(separator:" "))
+                                    .font(.caption2).foregroundStyle(Palette.secondary).lineLimit(1)
+                            }.contentShape(Rectangle())
+                        }.buttonStyle(.plain)
+                        .accessibilityIdentifier((selection == nil ? "media.open." : "pending.select.")+record.id)
+                        .accessibilityLabel(selection == nil ? "打开照片" : (selection!.wrappedValue.contains(record.id) ? "取消选择" : "选择照片"))
+                        .contextMenu { Button("查看清晰") { preview = ReviewPreview(id:record.id,wasPending:store.state.pending.contains(record.id)) } }
                     }
                 }
+                if records.count > displayLimit {
+                    Button("再显示120项（共\(records.count)项）") { displayLimit += 120 }.buttonStyle(.bordered).padding(.vertical)
+                }
             }
-            if records.count > displayLimit {
-                Button("再显示120项（共\(records.count)项）") { displayLimit += 120 }
-                    .buttonStyle(.bordered).padding(.vertical)
-            }
+        }
+        .sheet(item:$review) { session in
+            NavigationStack { ReviewView(ids:session.ids,startID:session.startID) }
+                .presentationDetents([.large]).presentationDragIndicator(.hidden)
+        }
+        .fullScreenCover(item:$preview) { item in
+            if store.state.records[item.id]?.isVideo == true { ReviewVideoPreview(id:item.id) }
+            else { OriginalPhotoView(id:item.id) }
         }
     }
 }
@@ -518,6 +516,10 @@ struct ReviewView: View {
     @State private var preview: ReviewPreview?
     @State private var closingPreview: ReviewPreview?
     @State private var hasAppeared = false
+    init(ids: [String],startID: String? = nil) {
+        self.ids = ids
+        _index = State(initialValue:startID.flatMap { ids.firstIndex(of:$0) } ?? 0)
+    }
     private var current: String? { index < ids.count ? ids[index] : nil }
     private var nextID: String? {
         let position = ReviewNavigation.next(from:index,ids:ids,records:store.state.records,pending:store.state.pending)
@@ -575,42 +577,40 @@ struct ReviewView: View {
 
 struct PendingView: View {
     @EnvironmentObject var store: LibraryStore
-    @State private var selecting = false
     @State private var selection: Set<String> = []
     private var valid: Set<String> { PendingSelection.valid(selection,pending:store.state.pending,visible:store.visibleIDs) }
     var body: some View {
         ScrollView {
-            VStack(alignment:.leading,spacing:20) {
-                Text("原图仍在相册，可随时恢复。")
-                    .font(.subheadline).foregroundStyle(Palette.secondary)
+            VStack(alignment:.leading,spacing:16) {
                 if !store.visiblePending.isEmpty {
                     HStack {
-                        Button(selecting ? "完成选择" : "选择") { selecting.toggle() }
-                            .accessibilityIdentifier("pending.selection")
+                        Text("已选 \(valid.count) 项").foregroundStyle(Palette.secondary)
                         Spacer()
-                        if selecting {
-                            Button(valid.count == store.visiblePending.count ? "取消全选" : "全选") {
-                                selection = valid.count == store.visiblePending.count ? [] : Set(store.visiblePending.map(\.id))
-                            }.accessibilityIdentifier("pending.selectAll")
-                        } else { Button("全部恢复") { store.restoreAllPending() } }
+                        Button(valid.count == store.visiblePending.count ? "取消全选" : "全选") {
+                            selection = valid.count == store.visiblePending.count ? [] : Set(store.visiblePending.map(\.id))
+                        }.accessibilityIdentifier("pending.selectAll")
                     }
                 }
-                MediaGrid(records:store.visiblePending,selection:selecting ? $selection : nil)
-                if selecting {
-                    Button("恢复所选 \(valid.count) 项") {
-                        store.restoreAllPending(ids:valid)
-                        selection = []
-                    }.buttonStyle(.bordered).disabled(valid.isEmpty || store.busy)
+                MediaGrid(records:store.visiblePending,selection:$selection)
+            }.padding()
+        }.background(canvas).navigationTitle("待删")
+        .toolbar {
+            Menu { Button("全部恢复") { store.restoreAllPending() } } label: { Image(systemName:"ellipsis.circle") }
+        }
+        .safeAreaInset(edge:.bottom,spacing:0) {
+            if !store.visiblePending.isEmpty {
+                HStack {
+                    Button("恢复所选 \(valid.count) 项") { store.restoreAllPending(ids:valid); selection = [] }
+                        .buttonStyle(.bordered).disabled(valid.isEmpty || store.busy)
                     Button(role:.destructive) {
                         let ids = valid
                         Task { await store.deletePending(selected:ids) }
-                    } label: {
-                        Text(store.busy ? "等待系统处理…" : "删除所选 \(valid.count) 项").frame(maxWidth:.infinity)
-                    }.buttonStyle(QuietPrimaryButtonStyle()).disabled(valid.isEmpty || store.busy)
-                    .accessibilityIdentifier("pending.delete")
-                }
-            }.padding()
-        }.background(canvas).navigationTitle("待删")
+                    } label: { Text(store.busy ? "等待系统处理…" : "删除所选 \(valid.count) 项").frame(maxWidth:.infinity) }
+                        .buttonStyle(.borderedProminent).disabled(valid.isEmpty || store.busy)
+                        .accessibilityIdentifier("pending.delete")
+                }.padding().background(.regularMaterial)
+            }
+        }
         .onChange(of:store.indexVersion) { _,_ in selection = valid }
     }
 }

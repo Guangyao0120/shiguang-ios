@@ -5,8 +5,11 @@ import Foundation
 struct ReviewSession: Identifiable {
     let id = UUID()
     let ids: [String]
-    init(ids: [String]) {
+    let startID: String?
+    init(ids: [String],startID: String? = nil) {
         var seen: Set<String> = []
-        self.ids = ids.filter { seen.insert($0).inserted }
+        let ordered = ids.filter { seen.insert($0).inserted }
+        self.ids = ordered
+        self.startID = startID.flatMap { ordered.contains($0) ? $0 : nil }
     }
 }

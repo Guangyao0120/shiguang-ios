@@ -77,102 +77,111 @@ private struct NativeReviewPager: UIViewRepresentable {
     }
 }
 
-// UIScrollView supplies native finger tracking, momentum, paging and edge bounce.
-// Three reusable image views avoid building thousands of SwiftUI pages.
+enum ReviewSwipe: Equatable {
+    case previous, next, stage, cancel
+    static func resolve(x: CGFloat,y: CGFloat,vx: CGFloat,vy: CGFloat,width: CGFloat,hasPrevious: Bool) -> ReviewSwipe {
+        let projectedX = x + vx*0.12, projectedY = y + vy*0.12
+        if projectedY < -100 && abs(projectedY) > abs(projectedX)*1.15 { return .stage }
+        let threshold = max(72,width*0.23)
+        if abs(projectedX) > abs(projectedY) && projectedX < -threshold { return .next }
+        if abs(projectedX) > abs(projectedY) && projectedX > threshold && hasPrevious { return .previous }
+        return .cancel
+    }
+}
+
 @MainActor
-private final class ReviewScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecognizerDelegate {
+private final class ReviewScrollView: UIView, UIGestureRecognizerDelegate {
     private let cards = (0..<3).map { _ in UIImageView() }
-    private let placeholders = (0..<3).map { _ in UILabel() }
-    private var pages: [String?] = []
-    private var centre = 0
+    private let notes = (0..<3).map { _ in UILabel() }
+    private let badge = UILabel()
     private var currentID = ""
-    private var previousSize = CGSize.zero
+    private var previousID: String?
+    private var generation = 0
+    private var animating = false
     private var step: (Int)->Void = { _ in }
     private var stage: ()->Void = {}
-    private var resetPosition = true
-    private var vertical: UIPanGestureRecognizer!
+    private var pan: UIPanGestureRecognizer!
     override init(frame: CGRect) {
         super.init(frame:frame)
-        delegate = self; isPagingEnabled = true; isDirectionalLockEnabled = true
-        showsHorizontalScrollIndicator = false; showsVerticalScrollIndicator = false
-        contentInsetAdjustmentBehavior = .never
         backgroundColor = UIColor(Palette.surface)
-        accessibilityIdentifier = "review.photo"; isAccessibilityElement = true
-        accessibilityTraits = [.image,.allowsDirectInteraction]
-        for i in cards.indices {
+        accessibilityIdentifier = "review.photo"; isAccessibilityElement = true; accessibilityTraits = .image
+        for i in [0,2,1] {
             cards[i].contentMode = .scaleAspectFit; cards[i].clipsToBounds = true
-            addSubview(cards[i]); placeholders[i].textAlignment = .center
-            placeholders[i].font = .preferredFont(forTextStyle:.subheadline)
-            placeholders[i].textColor = .secondaryLabel; addSubview(placeholders[i])
+            cards[i].backgroundColor = UIColor(Palette.surface)
+            cards[i].layer.cornerRadius = 20
+            notes[i].textAlignment = .center; notes[i].font = .preferredFont(forTextStyle:.subheadline)
+            notes[i].textColor = .secondaryLabel; notes[i].numberOfLines = 2
+            cards[i].addSubview(notes[i]); addSubview(cards[i])
         }
-        vertical = UIPanGestureRecognizer(target:self,action:#selector(verticalPan(_:)))
-        vertical.delegate = self; addGestureRecognizer(vertical)
-        panGestureRecognizer.require(toFail:vertical)
+        badge.text = L.t("放入待删"); badge.textColor = .white; badge.backgroundColor = .systemRed
+        badge.textAlignment = .center; badge.layer.cornerRadius = 12; badge.clipsToBounds = true; badge.alpha = 0
+        cards[1].addSubview(badge)
+        pan = UIPanGestureRecognizer(target:self,action:#selector(drag(_:))); pan.delegate = self; addGestureRecognizer(pan)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     func configure(current: String,previous: String?,next: String?,video: Bool,images: [String:UIImage],failed: Set<String>,step: @escaping (Int)->Void,stage: @escaping ()->Void) {
-        self.step = step; self.stage = stage
-        let newPages: [String?] = previous == nil ? [current,next] : [previous,current,next]
-        if currentID != current || pages != newPages {
-            currentID = current; pages = newPages; centre = previous == nil ? 0 : 1
-            resetPosition = true
+        self.step = step; self.stage = stage; previousID = previous
+        if currentID != current {
+            generation += 1; currentID = current; animating = false
+            cards[1].layer.removeAllAnimations(); cards[1].transform = .identity; badge.alpha = 0
+            cards[0].alpha = 0; cards[2].alpha = 0
         }
         accessibilityLabel = L.t(video ? "视频" : "照片")
-        for i in cards.indices {
-            let shown = i < pages.count
-            cards[i].isHidden = !shown; placeholders[i].isHidden = !shown
-            let id = shown ? pages[i] : nil
+        for (i,id) in [previous,Optional(current),next].enumerated() {
             cards[i].image = id.flatMap { images[$0] }
-            if let id {
-                placeholders[i].text = cards[i].image == nil ? L.t(failed.contains(id) ? "图片暂不可用，请点查看清晰" : "正在读取清晰照片…") : nil
-            } else { placeholders[i].text = L.t("这一组看完了") }
+            if let id { notes[i].text = cards[i].image == nil ? L.t(failed.contains(id) ? "图片暂不可用，请点查看清晰" : "正在读取清晰照片…") : nil }
+            else { notes[i].text = L.t("这一组看完了") }
         }
         setNeedsLayout()
     }
     override func layoutSubviews() {
         super.layoutSubviews()
-        guard bounds.width > 0 else { return }
-        let size = bounds.size
         for i in cards.indices {
-            let frame = CGRect(x:CGFloat(i)*size.width,y:0,width:size.width,height:size.height)
-            cards[i].frame = frame; placeholders[i].frame = frame
+            // Bounds/centre avoid changing the transformed card's frame during a drag.
+            cards[i].bounds = bounds; cards[i].center = CGPoint(x:bounds.midX,y:bounds.midY)
+            notes[i].frame = bounds.insetBy(dx:16,dy:16)
         }
-        contentSize = CGSize(width:CGFloat(pages.count)*size.width,height:size.height)
-        if resetPosition || previousSize != size {
-            resetPosition = false; previousSize = size
-            setContentOffset(CGPoint(x:CGFloat(centre)*size.width,y:0),animated:false)
-        }
+        badge.frame = CGRect(x:max(0,(bounds.width-120)/2),y:20,width:120,height:38)
     }
-    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) { settle() }
-    func scrollViewDidEndDragging(_ scrollView: UIScrollView,willDecelerate decelerate: Bool) { if !decelerate { settle() } }
-    private func settle() {
-        guard bounds.width > 0 else { return }
-        let page = Int((contentOffset.x/bounds.width).rounded())
-        let direction = page-centre
-        if direction != 0 { step(direction > 0 ? 1 : -1) }
-        else { setContentOffset(CGPoint(x:CGFloat(centre)*bounds.width,y:0),animated:true) }
+    override func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
+        guard recognizer === pan else { return super.gestureRecognizerShouldBegin(recognizer) }
+        let v = pan.velocity(in:self)
+        return !animating && (abs(v.x) > abs(v.y) || v.y < 0)
     }
-    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-        guard gestureRecognizer === vertical else { return super.gestureRecognizerShouldBegin(gestureRecognizer) }
-        let velocity = vertical.velocity(in:self)
-        return velocity.y < 0 && abs(velocity.y) > abs(velocity.x)*1.2 && !isDecelerating
-    }
-    @objc private func verticalPan(_ pan: UIPanGestureRecognizer) {
-        let distance = pan.translation(in:superview).y
-        switch pan.state {
-        case .changed: transform = CGAffineTransform(translationX:0,y:min(0,distance)*0.65)
+    @objc private func drag(_ recognizer: UIPanGestureRecognizer) {
+        let p = recognizer.translation(in:self), v = recognizer.velocity(in:self)
+        switch recognizer.state {
+        case .changed:
+            cards[0].alpha = p.x > 0 && previousID != nil ? 1 : 0; cards[2].alpha = cards[0].alpha == 0 ? 1 : 0
+            let x = p.x > 0 && previousID == nil ? p.x*0.25 : p.x
+            cards[1].transform = CGAffineTransform(translationX:x,y:p.y*0.65).rotated(by:x/max(1,bounds.width)*0.12)
+            badge.alpha = p.y < -40 && abs(p.y) > abs(p.x) ? min(1,(-p.y-40)/60) : 0
         case .ended:
-            if distance < -100 || pan.velocity(in:superview).y < -750 { stage() }
-            fallthrough
-        case .cancelled,.failed:
-            UIView.animate(withDuration:0.25,delay:0,usingSpringWithDamping:0.9,initialSpringVelocity:0) { self.transform = .identity }
+            finish(ReviewSwipe.resolve(x:p.x,y:p.y,vx:v.x,vy:v.y,width:bounds.width,hasPrevious:previousID != nil))
+        case .cancelled,.failed: finish(.cancel)
         default: break
         }
     }
+    private func finish(_ action: ReviewSwipe) {
+        if action == .cancel {
+            UIView.animate(withDuration:0.3,delay:0,usingSpringWithDamping:0.78,initialSpringVelocity:0,options:[.allowUserInteraction,.beginFromCurrentState]) { self.cards[1].transform = .identity; self.badge.alpha = 0 }
+            return
+        }
+        animating = true; let ticket = generation
+        let x: CGFloat = action == .previous ? bounds.width*1.25 : (action == .next ? -bounds.width*1.25 : 0)
+        let y: CGFloat = action == .stage ? -bounds.height*1.15 : 0
+        UIView.animate(withDuration:0.18,delay:0,options:[.curveEaseOut,.beginFromCurrentState]) {
+            self.cards[1].transform = CGAffineTransform(translationX:x,y:y).rotated(by:x/max(1,self.bounds.width)*0.12)
+        } completion: { [weak self] _ in
+            guard let self,self.generation == ticket else { return }
+            if action == .stage { self.stage() } else { self.step(action == .next ? 1 : -1) }
+        }
+    }
     override func accessibilityScroll(_ direction: UIAccessibilityScrollDirection) -> Bool {
-        if direction == .left { step(1); return true }
-        if direction == .right { step(-1); return true }
-        if direction == .up { stage(); return true }
+        guard !animating else { return false }
+        if direction == .left { finish(.next); return true }
+        if direction == .right, previousID != nil { finish(.previous); return true }
+        if direction == .up { finish(.stage); return true }
         return false
     }
 }

@@ -594,6 +594,20 @@ final class RulesTests: XCTestCase {
         XCTAssertEqual(ReviewNavigation.next(from:11999,ids:ids,records:records,pending:[]),12000)
     }
 
+    func testReviewStartsAtTappedPhotoAndKeepsFrozenQueue() {
+        let review = ReviewSession(ids:["a","b","b","c"],startID:"b")
+        XCTAssertEqual(review.ids,["a","b","c"]); XCTAssertEqual(review.startID,"b")
+        XCTAssertNil(ReviewSession(ids:["a"],startID:"gone").startID)
+    }
+    func testCardSwipePreservesDirectionMomentumAndCancellation() {
+        XCTAssertEqual(ReviewSwipe.resolve(x:-130,y:8,vx:0,vy:0,width:370,hasPrevious:true),.next)
+        XCTAssertEqual(ReviewSwipe.resolve(x:130,y:8,vx:0,vy:0,width:370,hasPrevious:true),.previous)
+        XCTAssertEqual(ReviewSwipe.resolve(x:130,y:8,vx:0,vy:0,width:370,hasPrevious:false),.cancel)
+        XCTAssertEqual(ReviewSwipe.resolve(x:10,y:-140,vx:0,vy:0,width:370,hasPrevious:true),.stage)
+        XCTAssertEqual(ReviewSwipe.resolve(x:-15,y:1,vx:-900,vy:0,width:370,hasPrevious:true),.next)
+        XCTAssertEqual(ReviewSwipe.resolve(x:20,y:-10,vx:0,vy:0,width:370,hasPrevious:true),.cancel)
+    }
+
     private func media(_ id: String, _ seconds: TimeInterval = 0,
                        lat: Double? = nil, lon: Double? = nil) -> MediaRecord {
         MediaRecord(id: id, date: Date(timeIntervalSince1970: 1_700_000_000 + seconds),

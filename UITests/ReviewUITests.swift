@@ -19,19 +19,48 @@ final class ReviewUITests: XCTestCase {
         app.launchEnvironment["SHIGUANG_PREVIEW_LANGUAGE"] = "zh-Hans"
         app.launch()
         app.tabBars.buttons["待删"].tap()
-        let choose = app.buttons["pending.selection"]
-        XCTAssertTrue(choose.waitForExistence(timeout:10)); choose.tap()
+        let delete = app.buttons["pending.delete"]
+        XCTAssertTrue(delete.waitForExistence(timeout:10)); XCTAssertTrue(delete.isHittable)
+        XCTAssertFalse(delete.isEnabled)
         let selections = app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","pending.select."))
         XCTAssertGreaterThan(selections.count,1)
         let before = selections.count
         selections.element(boundBy:0).tap()
         XCTAssertEqual(app.buttons["pending.delete"].label,"删除所选 1 项")
+        XCTAssertTrue(delete.isEnabled); XCTAssertTrue(delete.isHittable)
         app.tabBars.buttons["整理"].tap(); app.tabBars.buttons["待删"].tap()
         XCTAssertEqual(app.buttons["pending.delete"].label,"删除所选 1 项")
         app.buttons["恢复所选 1 项"].tap()
         let restored = NSPredicate { _,_ in selections.count == before-1 }
         expectation(for:restored,evaluatedWith:app); waitForExpectations(timeout:8)
         XCTAssertFalse(app.buttons["pending.delete"].isEnabled)
+        app.terminate()
+    }
+
+    @MainActor
+    func testEveryHomeCategoryPhotoOpensTheSameReviewAtTheTappedPosition() {
+        executionTimeAllowance = 600
+        let app = XCUIApplication()
+        app.launchEnvironment["SHIGUANG_DESIGN_PREVIEW"] = "1"
+        app.launchEnvironment["SHIGUANG_PREVIEW_LANGUAGE"] = "zh-Hans"
+        app.launch()
+        let categories = ["人像","城市风光","自然风光","截图","美食","聊天记录","视频通话","商品购物","票据","表情与梗图","视频","待确认"]
+        for name in categories {
+            let link = app.descendants(matching:.any).matching(identifier:"collection.tag."+name).firstMatch
+            for _ in 0..<8 { if link.isHittable { break }; app.swipeUp() }
+            XCTAssertTrue(link.isHittable,"Missing category: "+name); link.tap()
+            let tiles = app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","media.open."))
+            XCTAssertTrue(tiles.element(boundBy:1).waitForExistence(timeout:8)); tiles.element(boundBy:1).tap()
+            let counter = app.staticTexts["review.counter"]
+            XCTAssertTrue(counter.waitForExistence(timeout:8)); assertPosition(2,counter:counter)
+            checkControls(app)
+            drag(app,dx:-0.6,dy:0); assertPosition(3,counter:counter)
+            drag(app,dx:0.6,dy:0); assertPosition(2,counter:counter)
+            app.buttons["review.done"].tap()
+            app.navigationBars.buttons.element(boundBy:0).tap()
+            // Return to the top so each category starts from the same Home state.
+            for _ in 0..<5 { app.swipeDown() }
+        }
         app.terminate()
     }
 
