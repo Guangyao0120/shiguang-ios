@@ -235,7 +235,6 @@ struct AlbumSettingsView: View {
     @AppStorage("appLanguage") private var language = AppLanguage.system.rawValue
     @State private var showingWelcome = false
     @AppStorage("appearance") private var appearance = AlbumAppearance.system.rawValue
-    @AppStorage("liveActivityEnabled") private var liveActivity = true
     @AppStorage("backgroundEnabled") private var background = true
     @AppStorage("completionNotice") private var notifications = true
     @AppStorage("screenshotsOnly") private var screenshots = true
@@ -261,7 +260,6 @@ struct AlbumSettingsView: View {
                 if !runtime.note.isEmpty { Text(runtime.note).font(.footnote).foregroundStyle(Palette.secondary) }
             } header: { Text("整理") } footer: { Text("后台执行由 iOS 调度；锁定、强制关闭或系统资源不足时可能暂停，已完成进度会保留。") }
             Section {
-                Toggle("灵动岛整理进度", isOn: $liveActivity).onChange(of: liveActivity) { _, enabled in if !enabled { SortActivityController.shared.end() } }
                 Toggle("整理完成通知", isOn: $notifications).onChange(of: notifications) { _, enabled in
                     if enabled { Task { await runtime.requestNotificationPermission(); await refreshNotificationStatus() } }
                 }

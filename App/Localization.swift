@@ -28,6 +28,12 @@ enum L {
     }
     static func f(_ key: String, _ arguments: CVarArg...) -> String { String(format: t(key), locale: locale, arguments: arguments) }
     static func status(_ value: String) -> String {
+        if value.hasPrefix("已搜索 "), let regex = try? NSRegularExpression(pattern:"[0-9]+") {
+            let numbers = regex.matches(in:value,range:NSRange(value.startIndex...,in:value)).compactMap { match -> Int? in
+                guard let range = Range(match.range,in:value) else { return nil }; return Int(value[range])
+            }
+            if numbers.count == 2 { return f("已搜索 %d/%d 张，按画面相关度排列。",numbers[0],numbers[1]) }
+        }
         let parts = value.components(separatedBy: " · ")
         return parts.map { t($0) }.joined(separator: " · ")
     }

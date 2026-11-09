@@ -3955,6 +3955,846 @@
           }
         }
       }
+    },
+    "%d 项收藏": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d items"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d項目"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d개 항목"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d elementos"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Объектов: %d"
+          }
+        }
+      }
+    },
+    "本次 %.1f 张/秒": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This session: %.1f photos/sec"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今回：毎秒%.1f枚"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이번 작업: 초당 %.1f장"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta sesión: %.1f fotos/s"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сейчас: %.1f фото/с"
+          }
+        }
+      }
+    },
+    "灵动岛整理进度": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Live Activity progress"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ライブアクティビティの進捗"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실시간 현황 진행률"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Progreso en Live Activities"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Прогресс в Live Activities"
+          }
+        }
+      }
+    },
+    "搜索索引已就绪": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search index is ready"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "検索インデックスができました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "검색 색인이 준비됐어요"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Índice de búsqueda listo"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Поисковый индекс готов"
+          }
+        }
+      }
+    },
+    "已建立 %d 张照片的本地搜索索引。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d photos are indexed for on-device search."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d枚の写真を端末内で検索できます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사진 %d장의 기기 내 검색 색인을 만들었어요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d fotos indexadas para búsqueda local."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Локальный поисковый индекс содержит %d фото."
+          }
+        }
+      }
+    },
+    "照片留在本机，不消耗 API token。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photos stay on your device. No API tokens used."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真は端末内のまま。APIトークンは使いません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사진은 기기에만 있어요. API 토큰을 사용하지 않아요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las fotos se quedan en el dispositivo. Sin tokens de API."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Фото остаются на устройстве. Токены API не расходуются."
+          }
+        }
+      }
+    },
+    "先读取照片目录，不会立即识别整库，也不会上传照片。阅读下一步时，目录会在后台读取。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "First, read the photo catalog. Full-library analysis does not start and photos are not uploaded. The catalog loads while you continue."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "まず写真の一覧を読み込みます。全写真の解析や送信は始めません。次の案内を読む間に読み込みます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "먼저 사진 목록을 읽어요. 전체 분석이나 업로드는 시작하지 않아요. 다음 안내를 읽는 동안 목록을 불러와요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Primero leemos el catálogo. No se inicia el análisis completo ni se suben fotos. Se carga mientras continúas."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сначала читается каталог. Анализ всей медиатеки и загрузка фото не запускаются. Чтение продолжается, пока вы знакомитесь с приложением."
+          }
+        }
+      }
+    },
+    "搜索索引和截图文字可以分别处理。真正删除前，你会集中确认。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Build the search index and read screenshot text separately. Review marked photos together before deleting."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "検索インデックスと文字認識は別々に処理できます。実際の削除前にまとめて確認できます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "검색 색인과 스크린샷 문자 인식은 따로 처리해요. 실제 삭제 전에는 모아서 확인해요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El índice de búsqueda y el texto se procesan por separado. Revisa las fotos antes de eliminarlas."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Поисковый индекс и распознавание текста обрабатываются отдельно. Перед удалением фото можно проверить вместе."
+          }
+        }
+      }
+    },
+    "目录读取完成后，就能浏览相册。需要按画面找照片时，再建立本地搜索索引。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Browse once the catalog loads. Build a local search index when you want to search by image content."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一覧を読み込むと写真を閲覧できます。画像の内容で探すには端末内の検索インデックスを作成します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "목록을 읽으면 보관함을 볼 수 있어요. 사진 내용으로 찾으려면 로컬 검색 색인을 만드세요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Explora la biblioteca al cargar el catálogo. Crea el índice local para buscar por el contenido visual."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "После чтения каталога можно просматривать медиатеку. Для поиска по содержимому создайте локальный индекс."
+          }
+        }
+      }
+    },
+    "后台执行由 iOS 调度；锁定、强制关闭或系统资源不足时可能暂停，已完成进度会保留。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Background work is scheduled by iOS. It may pause when locked, force-quit or low on resources. Saved progress remains."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOSがバックグラウンド処理を管理します。ロック、強制終了、リソース不足で一時停止する場合があります。保存済みの進捗は残ります。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "백그라운드 작업은 iOS가 관리해요. 잠금, 강제 종료, 자원 부족 시 멈출 수 있으며 저장된 진행률은 유지돼요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS gestiona el trabajo en segundo plano. Puede pausarse al bloquear, cerrar la app o faltar recursos. Se conserva el progreso guardado."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Фоновую работу планирует iOS. Блокировка, принудительное закрытие или нехватка ресурсов могут приостановить её. Прогресс сохраняется."
+          }
+        }
+      }
+    },
+    "原图保存在苹果照片。本地整理不上传；可选 AI 发送前会预览。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Originals remain in Apple Photos. Local organizing uploads nothing. Optional AI requests have a preview before sending."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "原画はAppleの「写真」にあります。端末内の整理では送信しません。任意のAI送信は事前に確認できます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원본은 Apple 사진에 있어요. 로컬 정리는 업로드하지 않으며 선택적 AI 전송 전에 미리 볼 수 있어요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los originales permanecen en Fotos de Apple. La organización local no sube nada. Las solicitudes opcionales de IA muestran una vista previa."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Оригиналы остаются в Фото Apple. Локальный разбор ничего не загружает. Перед отправкой в ИИ доступен просмотр."
+          }
+        }
+      }
+    },
+    "相似度不是识别概率。切片、遮挡或画面中的小物体可能漏检，请查看原图确认。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Similarity is not a recognition probability. Sliced, obscured or small objects may be missed. Check the original."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "類似度は認識の確率ではありません。切られた物、隠れた物、小さい物は見落とす場合があります。原画で確認してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "유사도는 인식 확률이 아니에요. 잘리거나 가려진 작은 물체는 놓칠 수 있으니 원본을 확인하세요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La similitud no es una probabilidad. Pueden pasarse por alto objetos cortados, ocultos o pequeños. Comprueba el original."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Сходство не является вероятностью распознавания. Нарезанные, скрытые или мелкие объекты могут быть пропущены. Проверьте оригинал."
+          }
+        }
+      }
+    },
+    "结果只覆盖已建索引的照片。视频暂不参与画面搜索。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Results cover indexed photos only. Videos are not included in visual search yet."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "検索対象は索引済みの写真のみです。動画はまだ対象外です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "색인을 만든 사진만 검색해요. 동영상은 아직 화면 검색에 포함되지 않아요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Solo se buscan fotos indexadas. Los vídeos aún no se incluyen."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Поиск охватывает только проиндексированные фото. Видео пока не участвуют."
+          }
+        }
+      }
+    },
+    "准备本地搜索索引…": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparing local search index…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "端末内の検索インデックスを準備中…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 검색 색인 준비 중…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparando índice local…"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Подготовка локального индекса…"
+          }
+        }
+      }
+    },
+    "正在建立搜索索引": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Building search index"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "検索インデックスを作成中"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "검색 색인 생성 중"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Creando índice de búsqueda"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Создание поискового индекса"
+          }
+        }
+      }
+    },
+    "搜索索引已就绪。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search index is ready."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "検索インデックスができました。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "검색 색인이 준비됐어요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El índice está listo."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Поисковый индекс готов."
+          }
+        }
+      }
+    },
+    "已暂停，重开后从已保存进度继续。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paused. Continue from saved progress next time."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一時停止しました。次回は保存済みの進捗から再開できます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일시 정지했어요. 다음에 저장된 위치부터 이어가세요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En pausa. Continúa desde el progreso guardado."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Приостановлено. В следующий раз можно продолжить с сохранённого места."
+          }
+        }
+      }
+    },
+    "请先暂停当前整理，再建立搜索索引。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pause the current task before indexing."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現在の整理を一時停止してから索引を作成してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "현재 작업을 일시 정지한 다음 색인을 만드세요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pausa la tarea actual antes de crear el índice."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Приостановите текущую задачу перед индексацией."
+          }
+        }
+      }
+    },
+    "本地 CLIP · %d/%d 张": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On-device CLIP · %d/%d photos"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "端末内CLIP · %d/%d枚"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기기 내 CLIP · %d/%d장"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CLIP local · %d/%d fotos"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Локальный CLIP · %d/%d фото"
+          }
+        }
+      }
+    },
+    "已搜索 %d/%d 张，按画面相关度排列。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Searched %d/%d photos, ranked by visual relevance."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d/%d枚を検索し、画像の関連度順に表示します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d/%d장을 검색했어요. 화면 관련도 순으로 표시해요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%d/%d fotos buscadas, por relevancia visual."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Найденные среди %d/%d фото результаты упорядочены по визуальному сходству."
+          }
+        }
+      }
+    },
+    "本地翻译：": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On-device translation: "
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "端末内の翻訳："
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기기 내 번역: "
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Traducción local: "
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Локальный перевод: "
+          }
+        }
+      }
+    },
+    "本地检索：": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local query: "
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "端末内の検索語："
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 검색어: "
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Consulta local: "
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Локальный запрос: "
+          }
+        }
+      }
+    },
+    "正在使用系统本地翻译…": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Using on-device system translation…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "システムの端末内翻訳を使用中…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "시스템 기기 내 번역 사용 중…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Traduciendo en el dispositivo…"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Перевод на устройстве…"
+          }
+        }
+      }
+    },
+    "本地翻译尚未就绪。可下载系统语言包，或输入英文描述；不会改用付费 API。": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On-device translation is not ready. Download a system language pack or enter an English description. No paid API is used."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "端末内翻訳が未準備です。言語パックをダウンロードするか英語で入力してください。有料APIは使いません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기기 내 번역이 준비되지 않았어요. 언어 팩을 내려받거나 영어로 입력하세요. 유료 API는 사용하지 않아요."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La traducción local no está lista. Descarga el idioma del sistema o escribe en inglés. No se usa una API de pago."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Локальный перевод не готов. Скачайте системный языковой пакет или введите запрос на английском. Платный API не используется."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

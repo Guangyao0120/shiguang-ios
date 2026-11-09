@@ -59,6 +59,7 @@ actor LocalSemanticIndex {
     init(databaseURL: URL? = nil) {
         self.databaseURL = databaseURL ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("photo-search-v1.sqlite")
     }
+    deinit { if let database { sqlite3_close(database) } }
     private func open() throws -> OpaquePointer {
         if let database { return database }
         try FileManager.default.createDirectory(at: databaseURL.deletingLastPathComponent(), withIntermediateDirectories: true)

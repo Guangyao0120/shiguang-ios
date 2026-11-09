@@ -28,6 +28,12 @@ struct RootView: View {
                     NavigationStack { DetailView(id: "preview-4") }
                 } else if DesignPreview.screen == "video" {
                     NavigationStack { VideoOrganizeView(id: "preview-video") }
+                } else if DesignPreview.screen == "search" {
+                    NavigationStack { SemanticSearchView(initialQuery:"法棍") }
+                } else if DesignPreview.screen == "review" {
+                    NavigationStack { ReviewView(ids:["preview-1","preview-2"]) }
+                } else if DesignPreview.screen == "welcome" {
+                    WelcomeView()
                 } else if #available(iOS 26.0, *) {
                     navigationTabs
                 } else {
@@ -101,7 +107,10 @@ struct HomeView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Label(L.status(store.status), systemImage: store.scanning ? "viewfinder" : "checkmark.circle")
                         .font(.subheadline).foregroundStyle(Palette.secondary).lineLimit(2)
-                    if store.scanning { ProgressView(value: store.progress) }
+                    if store.scanning {
+                        ProgressView(value: store.progress)
+                        if store.scanRate > 0 { Text(L.f("本次 %.1f 张/秒",store.scanRate)).font(.caption).foregroundStyle(Palette.secondary) }
+                    }
                     HStack {
                         Button(store.scanning ? "暂停" : (runtime.launching ? "准备中…" : (screenshotsOnly ? "整理截图" : "开始整理"))) {
                             if store.scanning { ScanRuntime.shared.pause() } else { ScanRuntime.shared.start() }

@@ -13,6 +13,7 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
     @Published var detailLayers = 0
     @Published var busy = false
     @Published var progress = 0.0
+    @Published var scanRate = 0.0
     @Published var status = "读取整理记录…"
     @Published var message: String?
     @Published var similar: [[String]] = []
@@ -46,13 +47,14 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
             observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
                 Task { @MainActor in
                     if note.name == UIApplication.didReceiveMemoryWarningNotification {
-                        PhotoAccess.clearCache(); self?.pause()
+                        PhotoAccess.clearCache(); self?.pause(); SemanticSearchController.shared.pause()
                         self?.status = "内存紧张，扫描已暂停；已完成结果保留"
                     }
                 }
             })
         }
         ScanRuntime.shared.store = self
+        SemanticSearchController.shared.library = self
     }
 
     func start() async {
@@ -196,13 +198,15 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
         guard !scanning, !busy, !refreshing, loaded, permitted else { onFinish?(false, 0); return }
         let todo = ScanPolicy.candidates(records.compactMap { state.records[$0.id] }, screenshotsOnly: screenshotsOnly, limit: limit)
         guard !todo.isEmpty else { status = "暂无待识别的\(screenshotsOnly ? "截图" : "图片")"; onFinish?(true, 0); return }
-        scanning = true; progress = 0
+        scanning = true; progress = 0; scanRate = 0
         status = "开始整理 · \(todo.count)项"
         scanTask = Task { [weak self] in
             guard let self else { return }
             var updates: [MediaRecord] = []
             var handled = 0
             var lastCommit = Date()
+            let started = Date()
+            var lastFeedback = Date.distantPast
             var completedAll = false
             defer {
                 self.commitAnalysis(updates); self.scanning = false; self.save(immediately: true)
@@ -212,7 +216,6 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
             for (position, record) in todo.enumerated() {
                 if Task.isCancelled { return }
                 var updated = record
-                self.status = "读取图片 · \(position + 1)/\(todo.count)"
                 let image = await PhotoAccess.image(id: record.id, size: CGSize(width: record.isScreenshot ? 1024 : 640, height: record.isScreenshot ? 1024 : 640), highQuality: true)
                 guard !Task.isCancelled else { return }
                 if let image {
@@ -232,9 +235,13 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
                 if updates.count >= 24 || Date().timeIntervalSince(lastCommit) >= 2 {
                     self.commitAnalysis(updates); updates.removeAll(keepingCapacity: true); self.save(); lastCommit = Date()
                 }
-                self.progress = Double(position + 1) / Double(todo.count)
                 ScanRuntime.shared.updateProgress(done: position + 1, total: todo.count)
-                self.status = "正在整理 · \(position + 1)/\(todo.count)"
+                if Date().timeIntervalSince(lastFeedback) >= 0.5 || position + 1 == todo.count {
+                    self.progress = Double(position + 1) / Double(todo.count)
+                    self.scanRate = Double(handled) / max(0.001,Date().timeIntervalSince(started))
+                    self.status = "正在整理 · \(position + 1)/\(todo.count)"
+                    lastFeedback = Date()
+                }
                 await Task.yield()
             }
             self.status = "本批完成 · 可继续整理"

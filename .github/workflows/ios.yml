@@ -70,11 +70,16 @@ jobs:
               sleep 3
               xcrun simctl io "$DEVICE_ID" screenshot "$RUNNER_TEMP/Appearance/$MODE-$TAB.png"
             done
-            for SCREEN in settings detail video; do
+            for SCREEN in settings detail video search review welcome; do
               SIMCTL_CHILD_SHIGUANG_DESIGN_PREVIEW=1 SIMCTL_CHILD_SHIGUANG_PREVIEW_SCREEN="$SCREEN" xcrun simctl launch --terminate-running-process "$DEVICE_ID" com.example.Shiguang
               sleep 3
               xcrun simctl io "$DEVICE_ID" screenshot "$RUNNER_TEMP/Appearance/$MODE-$SCREEN.png"
             done
+          done
+          for LANG in en ja ko es ru; do
+            SIMCTL_CHILD_SHIGUANG_DESIGN_PREVIEW=1 SIMCTL_CHILD_SHIGUANG_PREVIEW_LANGUAGE="$LANG" SIMCTL_CHILD_SHIGUANG_PREVIEW_SCREEN=settings xcrun simctl launch --terminate-running-process "$DEVICE_ID" com.example.Shiguang
+            sleep 2
+            xcrun simctl io "$DEVICE_ID" screenshot "$RUNNER_TEMP/Appearance/language-$LANG.png"
           done
       - name: Upload appearance screenshots
         uses: actions/upload-artifact@v4
