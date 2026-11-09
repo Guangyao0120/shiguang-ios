@@ -148,7 +148,7 @@ struct HomeView: View {
                                         Text("\(store.index.byTag[tag]?.count ?? 0)").foregroundStyle(Palette.secondary)
                                     }.font(.subheadline.weight(.medium))
                                 }.padding(20).paperCard(radius: 22)
-                            }.buttonStyle(.plain)
+                            }.buttonStyle(.plain).accessibilityIdentifier("collection.tag." + tag.rawValue)
                         }
                     }
                     NavigationLink { SimilarView() } label: {
@@ -232,7 +232,7 @@ struct CollectionView: View {
                 HStack {
                     Text("\(records.count) 项").foregroundStyle(Palette.secondary)
                     Spacer()
-                    Button("连续整理") { reviewSession = ReviewSession(ids: records.map(\.id)) }.buttonStyle(QuietPrimaryButtonStyle()).disabled(records.isEmpty)
+                    Button("连续整理") { reviewSession = ReviewSession(ids: records.map(\.id)) }.accessibilityIdentifier("collection.review").buttonStyle(QuietPrimaryButtonStyle()).disabled(records.isEmpty)
                 }
                 MediaGrid(records: records)
             }.padding()
@@ -255,7 +255,10 @@ struct CollectionView: View {
                 }
             } label: { Image(systemName: "ellipsis.circle") }
         }
-        .sheet(item: $reviewSession) { session in NavigationStack { ReviewView(ids: session.ids) } }
+        .sheet(item: $reviewSession) { session in
+            NavigationStack { ReviewView(ids: session.ids) }
+                .presentationDetents([.large]).presentationDragIndicator(.hidden)
+        }
         .alert("行程名称", isPresented: $renaming) {
             TextField("例如：中秋 · 长沙", text: $newName)
             Button("保存") { if case .trip(let id) = scope { store.renameTrip(id, name: newName) } }
@@ -487,7 +490,7 @@ struct ReviewView: View {
     private var current: String? { index < ids.count ? ids[index] : nil }
     var body: some View {
         VStack(spacing: 18) {
-            Text("\(min(index + 1, ids.count)) / \(ids.count)").font(.subheadline).foregroundStyle(Palette.secondary)
+            Text("\(min(index + 1, ids.count)) / \(ids.count)").accessibilityIdentifier("review.counter").font(.subheadline).foregroundStyle(Palette.secondary)
             if let current {
                 Thumbnail(id: current, fit: true, resolution: 2048, clearOnly: true).frame(maxHeight: .infinity).clipped()
                     .clipShape(RoundedRectangle(cornerRadius: 20))
@@ -496,27 +499,19 @@ struct ReviewView: View {
                         if offset.height < -45 { Label("放入待删", systemImage: "trash").padding().background(.regularMaterial, in: Capsule()).foregroundStyle(.red) }
                     }
                     .contentShape(Rectangle())
-                    .gesture(DragGesture().onChanged { offset = $0.translation }.onEnded { value in
+                    .accessibilityElement(children:.ignore).accessibilityLabel(L.t(store.state.records[current]?.isVideo == true ? "视频" : "照片")).accessibilityIdentifier("review.photo")
+                    .gesture(DragGesture(minimumDistance:12,coordinateSpace:.named("review.canvas")).onChanged { offset = $0.translation }.onEnded { value in
                         if value.translation.height < -100 && abs(value.translation.height) > abs(value.translation.width) { stageCurrent() }
                         else if value.translation.width < -100 { next() }
                         else if value.translation.width > 100 { previous() }
                         withAnimation { offset = .zero }
                     })
                 Text("左滑下一张 · 右滑上一张 · 上滑待删").font(.footnote).foregroundStyle(Palette.secondary)
-                HStack {
-                    if store.state.records[current]?.isVideo != true {
-                        Button("查看清晰", systemImage: "arrow.up.left.and.arrow.down.right") {
-                            originalID = current; originalWasPending = store.state.pending.contains(current); showingOriginal = true
-                        }
-                            .buttonStyle(.bordered)
-                    }
-                    Button("下一张") { next() }.buttonStyle(.bordered)
-                    if store.state.pending.contains(current) {
-                        Button("恢复") { store.restore(current) }.buttonStyle(.bordered)
-                    } else {
-                        Button("放入待删", role: .destructive) { stageCurrent() }.buttonStyle(.bordered)
-                    }
-                }
+                ReviewControls(pending:store.state.pending.contains(current),clear:{
+                    originalID = current; originalWasPending = store.state.pending.contains(current); showingOriginal = true
+                },next:{ next() },stageOrRestore:{
+                    if store.state.pending.contains(current) { store.restore(current) } else { stageCurrent() }
+                })
                 NavigationLink("查看详情与分类") { DetailView(id: current) }
             } else {
                 Button("上一张") { previous() }
@@ -526,15 +521,18 @@ struct ReviewView: View {
                 let previous = store.state.lastStaged
                 store.undo()
                 if let previous, let position = ids.firstIndex(of: previous) { index = position }
-            }.disabled(store.state.lastStaged == nil)
-        }.padding().background(canvas).navigationTitle("连续整理").navigationBarTitleDisplayMode(.inline)
-            .toolbar { Button("完成") { dismiss() } }
+            }.accessibilityIdentifier("review.undo").disabled(store.state.lastStaged == nil)
+        }.padding().coordinateSpace(name:"review.canvas").background(canvas).navigationTitle("连续整理").navigationBarTitleDisplayMode(.inline)
+            .toolbar { Button("完成") { dismiss() }.accessibilityIdentifier("review.done") }
             .onAppear { if !hasAppeared { hasAppeared = true; skipPending() } }
             .fullScreenCover(isPresented: $showingOriginal, onDismiss: {
                 if ReviewNavigation.advanceAfterPreview(id:originalID,current:current,wasPending:originalWasPending,pending:store.state.pending) { next() }
                 originalID = nil
             }) {
-                if let originalID { OriginalPhotoView(id: originalID) }
+                if let originalID {
+                    if store.state.records[originalID]?.isVideo == true { ReviewVideoPreview(id:originalID) }
+                    else { OriginalPhotoView(id: originalID) }
+                }
             }
     }
     private func stageCurrent() {
@@ -582,13 +580,13 @@ struct PeopleView: View {
             Section {
                 NavigationLink { CollectionView(title: "全部人像", scope: .tag(.portrait)) } label: {
                     Label("全部人像", systemImage: "person.crop.rectangle")
-                }
+                }.accessibilityIdentifier("collection.people.all")
             }
             Section("我的人物") {
                 ForEach(store.state.people) { person in
                     NavigationLink { CollectionView(title: person.name, scope: .person(person.id)) } label: {
                         Label(person.name, systemImage: "person.crop.circle")
-                    }
+                    }.accessibilityIdentifier("collection.person." + person.id.uuidString)
                 }
                 Button("添加人物") { name = ""; naming = true }
             }
@@ -620,7 +618,7 @@ struct TripsView: View {
                                 .font(.caption).foregroundStyle(Palette.secondary)
                         }
                     }.padding(.vertical, 6)
-                }
+                }.accessibilityIdentifier("collection.trip." + trip.id.uuidString)
             }
         }.paperList().navigationTitle("出游")
             .toolbar {

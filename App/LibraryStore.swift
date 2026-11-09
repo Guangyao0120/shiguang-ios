@@ -75,8 +75,9 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
             sample.pending = ["preview-3", "preview-7"]
             sample.customTagNames = ["工作", "纪念", "待买"]
             var video = MediaRecord(id: "preview-video", date: Date(), isVideo: true, isScreenshot: false, duration: 32)
-            video.videoTitle = "桐桐 · 生日祝福"; video.voiceTranscript = "祝桐桐生日快乐，开开心心每一天。"; video.tags = [.video]
+            video.videoTitle = "桐桐 · 生日祝福"; video.voiceTranscript = "祝桐桐生日快乐，开开心心每一天。"; video.tags = [.video,.portrait]; video.people = [person.id]
             sample.records[video.id] = video
+            sample.trips[0].members.insert(video.id)
             state = sample; visibleIDs = Set(sample.records.keys)
             index = await Task.detached { LibraryIndex.build(state: sample, visible: Set(sample.records.keys)) }.value
             indexVersion += 1; status = "从上次继续"; loaded = true

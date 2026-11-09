@@ -6,6 +6,7 @@ on:
     paths:
       - 'App/**'
       - 'Tests/**'
+      - 'UITests/**'
       - 'scripts/**'
       - 'Shiguang.xcodeproj/**'
       - '.github/workflows/ios.yml'
@@ -54,7 +55,7 @@ jobs:
         run: |
           set -o pipefail
           DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import sys,json; d=json.load(sys.stdin); print(next(x["udid"] for k,v in d["devices"].items() if "iOS-26" in k for x in v if "iPhone" in x["name"]))')
-          xcodebuild -project "$SHIGUANG_PROJECT" -scheme Shiguang -destination "platform=iOS Simulator,id=$DEVICE_ID" -derivedDataPath "$RUNNER_TEMP/ShiguangBuild" -resultBundlePath "$RUNNER_TEMP/TestResults.xcresult" CODE_SIGNING_ALLOWED=NO test 2>&1 | tee "$RUNNER_TEMP/tests.log"
+          xcodebuild -project "$SHIGUANG_PROJECT" -scheme Shiguang -destination "platform=iOS Simulator,id=$DEVICE_ID" -derivedDataPath "$RUNNER_TEMP/ShiguangBuild" -resultBundlePath "$RUNNER_TEMP/TestResults.xcresult" CODE_SIGNING_ALLOWED=NO -parallel-testing-enabled NO test 2>&1 | tee "$RUNNER_TEMP/tests.log"
       - name: Capture light and dark layouts with sample records
         run: |
           set -euo pipefail
@@ -88,12 +89,12 @@ jobs:
           path: ${{ runner.temp }}/Appearance
           retention-days: 14
       - name: Package simulator app
-        if: success()
+        if: github.event_name == 'workflow_dispatch' 
         run: |
           cd "$RUNNER_TEMP/ShiguangBuild/Build/Products/Debug-iphonesimulator"
           ditto -c -k --sequesterRsrc --keepParent Shiguang.app "$RUNNER_TEMP/Shiguang-Simulator.zip"
       - name: Upload simulator app (not installable on iPhone)
-        if: success()
+        if: github.event_name == 'workflow_dispatch' 
         uses: actions/upload-artifact@v4
         with:
           name: Shiguang-Simulator
