@@ -97,19 +97,19 @@ enum TagNames {
     }
 }
 
-struct NamedPerson: Codable, Identifiable {
+struct NamedPerson: Codable, Identifiable, Equatable {
     var id = UUID()
     var name: String
 }
 
-struct Trip: Codable, Identifiable {
+struct Trip: Codable, Identifiable, Equatable {
     var id = UUID()
     var name: String
     var members: Set<String>
     var manual = false
 }
 
-struct LibraryState: Codable {
+struct LibraryState: Codable, Equatable {
     var similarPairs: [[String]]?
     var customTagNames: [String]?
     var records: [String: MediaRecord] = [:]

@@ -15,6 +15,7 @@ actor LibraryDisk {
     private var lastRevision = -1
     private var lastRecords: [String: MediaRecord] = [:]
     private var lastMetadata: Data?
+    private var lastMetadataState: LibraryState?
     private var cacheLoaded = false
     private var lastMetricTime = Date.distantPast
     private(set) var writeMetrics = WriteMetrics()
@@ -59,6 +60,7 @@ actor LibraryDisk {
         if step == SQLITE_ROW {
             let bytes = try data(metadata,column:0)
             var state = try JSONDecoder().decode(LibraryState.self,from:bytes)
+            let metadataState = state
             let records = try statement("SELECT id,payload FROM library_records")
             defer { sqlite3_finalize(records) }
             var result = sqlite3_step(records)
@@ -68,11 +70,11 @@ actor LibraryDisk {
                 result = sqlite3_step(records)
             }
             guard result == SQLITE_DONE else { throw DiskError.database }
-            lastRecords = state.records; lastMetadata = bytes; cacheLoaded = true
+            lastRecords = state.records; lastMetadata = bytes; lastMetadataState = metadataState; cacheLoaded = true
             return state
         }
         guard step == SQLITE_DONE else { throw DiskError.database }
-        cacheLoaded = true; lastRecords = [:]; lastMetadata = nil
+        cacheLoaded = true; lastRecords = [:]; lastMetadata = nil; lastMetadataState = nil
         guard FileManager.default.fileExists(atPath:url.path) else { return LibraryState() }
         let state = try JSONDecoder().decode(LibraryState.self,from:Data(contentsOf:url))
         try write(state,revision:0)
@@ -84,8 +86,8 @@ actor LibraryDisk {
         let updates = state.records.values.filter { lastRecords[$0.id] != $0 }
         let removed = Set(lastRecords.keys).subtracting(state.records.keys)
         var metadata = state; metadata.records = [:]
-        let metadataBytes = try JSONEncoder().encode(metadata)
-        let metadataChanged = metadataBytes != lastMetadata
+        let metadataChanged = metadata != lastMetadataState
+        let metadataBytes = metadataChanged ? try JSONEncoder().encode(metadata) : (lastMetadata ?? Data())
         writeMetrics.recordsWritten = 0; writeMetrics.encodedBytes = 0
         guard !updates.isEmpty || !removed.isEmpty || metadataChanged else { lastRevision = revision; return }
         let db = try open()
@@ -116,7 +118,7 @@ actor LibraryDisk {
                 bytesWritten += metadataBytes.count
             }
             guard sqlite3_exec(db,"COMMIT",nil,nil,nil) == SQLITE_OK else { throw DiskError.database }
-            lastRevision = revision; lastRecords = state.records; lastMetadata = metadataBytes
+            lastRevision = revision; lastRecords = state.records; lastMetadata = metadataBytes; lastMetadataState = metadata
             writeMetrics.recordsWritten = updates.count; writeMetrics.encodedBytes = bytesWritten; writeMetrics.transactions += 1
             // Aggregate counters make USB diagnostics possible without copying OCR or images.
             var pendingImages = 0, pendingScreenshots = 0, analyzed = 0, unavailable = 0

@@ -84,11 +84,15 @@ final class RulesTests: XCTestCase {
         XCTAssertEqual(loaded.pending,["a"])
         loaded.records["b"] = media("b")
         try await disk.write(loaded,revision:1)
-        let reopened = try await LibraryDisk(url:url).load()
+        let reopenedDisk = LibraryDisk(url:url)
+        let reopened = try await reopenedDisk.load()
         XCTAssertEqual(reopened.records.count,2)
         XCTAssertEqual(reopened.records["a"]?.text,"Saved OCR")
         XCTAssertEqual(reopened.customTagNames,["Saved tag"])
         XCTAssertEqual(try Data(contentsOf:url),backup)
+        try await reopenedDisk.write(reopened,revision:2)
+        let reopenedMetrics = await reopenedDisk.writeMetrics
+        XCTAssertEqual(reopenedMetrics.transactions,0)
     }
     func testProgressSaveEncodesOnlyChangedRecordsAndSkipsIdenticalSnapshot() async throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
