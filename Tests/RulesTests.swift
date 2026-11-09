@@ -560,7 +560,7 @@ final class RulesTests: XCTestCase {
     @MainActor
     func testReviewPrefetchRejectsLateImageAfterLeavingItsWindow() async throws {
         let gate = ScanTestGate(), waiting = expectation(description:"old photo loading")
-        let image = UIImage()
+        let image = UIGraphicsImageRenderer(size:CGSize(width:8,height:8)).image { _ in UIColor.blue.setFill(); UIBezierPath(rect:CGRect(x:0,y:0,width:8,height:8)).fill() }
         let cache = ReviewImageCache(loader:{ id in
             if id == "old" { waiting.fulfill(); await gate.wait() }
             return image
@@ -569,6 +569,19 @@ final class RulesTests: XCTestCase {
         cache.update(["new"]); gate.release()
         for _ in 0..<500 { if cache.images["new"] != nil { break }; try await Task.sleep(for:.milliseconds(10)) }
         XCTAssertNil(cache.images["old"]); XCTAssertNotNil(cache.images["new"])
+        cache.clear()
+    }
+    @MainActor
+    func testInvalidReviewImageReportsFailureAndCanRetryWithoutBlockingNextPhoto() async throws {
+        let good = UIGraphicsImageRenderer(size:CGSize(width:8,height:8)).image { _ in UIColor.blue.setFill(); UIBezierPath(rect:CGRect(x:0,y:0,width:8,height:8)).fill() }
+        var invalid = true
+        let cache = ReviewImageCache(loader:{ _ in invalid ? UIImage() : good })
+        cache.update(["a"])
+        for _ in 0..<500 { if cache.failed.contains("a") { break }; try await Task.sleep(for:.milliseconds(10)) }
+        XCTAssertTrue(cache.failed.contains("a")); XCTAssertNil(cache.images["a"])
+        invalid = false; cache.update(["a","b"])
+        for _ in 0..<500 { if cache.images.count == 2 { break }; try await Task.sleep(for:.milliseconds(10)) }
+        XCTAssertFalse(cache.failed.contains("a")); XCTAssertEqual(cache.images.count,2)
         cache.clear()
     }
     func testReviewCursorHandlesLargeLibrariesWithoutRebuildingIdentifierSets() {

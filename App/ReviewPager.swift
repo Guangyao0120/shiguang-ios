@@ -5,6 +5,7 @@ import UIKit
 @MainActor
 final class ReviewImageCache: ObservableObject {
     @Published private(set) var images: [String:UIImage] = [:]
+    @Published private(set) var failed: Set<String> = []
     private var tasks: [String:Task<Void,Never>] = [:]
     private var tokens: [String:UUID] = [:]
     private let loader: (String) async -> UIImage?
@@ -17,24 +18,27 @@ final class ReviewImageCache: ObservableObject {
         for id in Array(tasks.keys) where !wanted.contains(id) {
             tasks.removeValue(forKey:id)?.cancel(); tokens.removeValue(forKey:id)
         }
-        images = images.filter { wanted.contains($0.key) }
+        images = images.filter { wanted.contains($0.key) }; failed.formIntersection(wanted)
         for id in ids.prefix(3) where images[id] == nil && tasks[id] == nil {
-            let token = UUID(); tokens[id] = token
+            let token = UUID(); tokens[id] = token; failed.remove(id)
             tasks[id] = Task { [weak self] in
                 guard let self else { return }
                 let image = await loader(id)
                 guard !Task.isCancelled, tokens[id] == token else { return }
+                guard let image, image.cgImage != nil || image.ciImage != nil else {
+                    tasks.removeValue(forKey:id); tokens.removeValue(forKey:id); failed.insert(id); return
+                }
                 // UIKit uses its background preparation queue, so decoding is not
                 // deferred to the first frame of the horizontal animation.
-                let prepared = await image?.byPreparingForDisplay()
+                let prepared = await image.byPreparingForDisplay()
                 guard !Task.isCancelled, tokens[id] == token else { return }
                 tasks.removeValue(forKey:id); tokens.removeValue(forKey:id)
-                if let prepared = prepared ?? image { images[id] = prepared }
+                images[id] = prepared ?? image
             }
         }
     }
     func clear() {
-        tasks.values.forEach { $0.cancel() }; tasks = [:]; tokens = [:]; images = [:]
+        tasks.values.forEach { $0.cancel() }; tasks = [:]; tokens = [:]; images = [:]; failed = []
     }
 }
 
@@ -48,7 +52,7 @@ struct ReviewPager: View {
     @StateObject private var cache = ReviewImageCache()
     private var window: [String] { [current,next,previous].compactMap { $0 } }
     var body: some View {
-        NativeReviewPager(current:current,previous:previous,next:next,video:video,images:cache.images,step:step,stage:stage)
+        NativeReviewPager(current:current,previous:previous,next:next,video:video,images:cache.images,failed:cache.failed,step:step,stage:stage)
             .onAppear { cache.update(window) }
             .onChange(of:window) { _,ids in cache.update(ids) }
             .onDisappear { cache.clear() }
@@ -64,11 +68,12 @@ private struct NativeReviewPager: UIViewRepresentable {
     let next: String?
     let video: Bool
     let images: [String:UIImage]
+    let failed: Set<String>
     let step: (Int)->Void
     let stage: ()->Void
     func makeUIView(context: Context) -> ReviewScrollView { ReviewScrollView() }
     func updateUIView(_ view: ReviewScrollView,context: Context) {
-        view.configure(current:current,previous:previous,next:next,video:video,images:images,step:step,stage:stage)
+        view.configure(current:current,previous:previous,next:next,video:video,images:images,failed:failed,step:step,stage:stage)
     }
 }
 
@@ -105,7 +110,7 @@ private final class ReviewScrollView: UIScrollView, UIScrollViewDelegate, UIGest
         panGestureRecognizer.require(toFail:vertical)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-    func configure(current: String,previous: String?,next: String?,video: Bool,images: [String:UIImage],step: @escaping (Int)->Void,stage: @escaping ()->Void) {
+    func configure(current: String,previous: String?,next: String?,video: Bool,images: [String:UIImage],failed: Set<String>,step: @escaping (Int)->Void,stage: @escaping ()->Void) {
         self.step = step; self.stage = stage
         let newPages: [String?] = previous == nil ? [current,next] : [previous,current,next]
         if currentID != current || pages != newPages {
@@ -118,7 +123,9 @@ private final class ReviewScrollView: UIScrollView, UIScrollViewDelegate, UIGest
             cards[i].isHidden = !shown; placeholders[i].isHidden = !shown
             let id = shown ? pages[i] : nil
             cards[i].image = id.flatMap { images[$0] }
-            placeholders[i].text = id == nil ? L.t("这一组看完了") : (cards[i].image == nil ? L.t("正在读取清晰照片…") : nil)
+            if let id {
+                placeholders[i].text = cards[i].image == nil ? L.t(failed.contains(id) ? "图片暂不可用，请点查看清晰" : "正在读取清晰照片…") : nil
+            } else { placeholders[i].text = L.t("这一组看完了") }
         }
         setNeedsLayout()
     }
