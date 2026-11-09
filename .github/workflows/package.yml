@@ -1,9 +1,6 @@
 name: iPhone debug package
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/package.yml']
 permissions:
   contents: read
   actions: read

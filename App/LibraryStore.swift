@@ -79,11 +79,12 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
                 var record = MediaRecord(id: "preview-\(i)", date: Date().addingTimeInterval(Double(-i * 3600)), isVideo: false, isScreenshot: i % 2 == 0, duration: 0)
                 record.analyzed = true
                 record.tags = [PhotoTag.allCases[i % PhotoTag.allCases.count]]
+                if i == 11 { record.text = "法官在法庭宣读判决" }
                 if i % 4 == 0 { record.people = [person.id]; record.keywords = ["日常"] }
                 sample.records[record.id] = record
             }
             sample.trips = [Trip(name: "中秋 · 长沙", members: Set((0..<18).map { "preview-\($0)" }))]
-            sample.pending = ["preview-3", "preview-7"]
+            sample.pending = ["preview-3", "preview-7", "preview-15", "preview-19", "preview-27", "preview-31", "preview-39", "preview-43"]
             sample.customTagNames = ["工作", "纪念", "待买"]
             var video = MediaRecord(id: "preview-video", date: Date(), isVideo: true, isScreenshot: false, duration: 32)
             video.videoTitle = "桐桐 · 生日祝福"; video.voiceTranscript = "祝桐桐生日快乐，开开心心每一天。"; video.tags = [.video,.portrait]; video.people = [person.id]
@@ -484,7 +485,7 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
     }
 
     func matches(_ record: MediaRecord, query: String) -> Bool {
-        let words = query.lowercased().split(whereSeparator: \.isWhitespace)
+        let words = PhotoSearchQuery.normalized(query).split(whereSeparator: \.isWhitespace)
         let content = index.search[record.id] ?? ""
         return words.allSatisfy { content.contains($0) }
     }

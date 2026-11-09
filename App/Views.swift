@@ -3,7 +3,7 @@ import Photos
 import PhotosUI
 import AVKit
 
-private let canvas = Palette.canvas
+private var canvas: some View { AlbumCanvas() }
 
 struct RootView: View {
     @EnvironmentObject var store: LibraryStore
@@ -82,7 +82,6 @@ struct RootView: View {
         TabView(selection: $selectedTab) {
             NavigationStack { HomeView() }.tabItem { Label("整理", systemImage: "square.grid.2x2") }.tag(0)
             NavigationStack { TripsView() }.tabItem { Label("出游", systemImage: "map") }.tag(1)
-            NavigationStack { PeopleView() }.tabItem { Label("人物", systemImage: "person.2") }.tag(2)
             NavigationStack { PendingView() }.tabItem { Label("待删", systemImage: "trash") }.badge(store.visiblePending.count).tag(3)
             NavigationStack { AIOrganizeView() }.tabItem { Label("AI", systemImage: "sparkles") }.tag(4)
         }
@@ -112,7 +111,7 @@ struct HomeView: View {
 
                 HStack {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("留住喜欢的").font(.system(size: 30, weight: .medium, design: .serif))
+                        Text("留住喜欢的").font(.system(size: 30, weight: .semibold))
                         Text(L.f("%d 项收藏",store.visibleActive.count)).font(.subheadline).foregroundStyle(Palette.secondary)
                     }
                     Spacer()
@@ -142,8 +141,13 @@ struct HomeView: View {
                         .font(.footnote)
                 }
                 NavigationLink { SemanticSearchView(initialQuery: query) } label: {
-                    Label("用描述找照片", systemImage: "sparkle.magnifyingglass").frame(maxWidth: .infinity, alignment: .leading)
-                }.buttonStyle(.bordered)
+                    HStack(spacing: 12) {
+                        Image(systemName: "sparkle.magnifyingglass").font(.title3)
+                        Text("用描述找照片").font(.body.weight(.medium))
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(Palette.secondary)
+                    }.padding(.horizontal, 16).frame(minHeight: 54)
+                }.albumGlassButton().accessibilityIdentifier("home.semanticSearch")
                 if !query.isEmpty {
                     MediaGrid(records: searchResults)
                 } else {
@@ -161,7 +165,7 @@ struct HomeView: View {
                                         Spacer()
                                         Text("\(store.index.byTag[tag]?.count ?? 0)").foregroundStyle(Palette.secondary)
                                     }.font(.subheadline.weight(.medium))
-                                }.padding(20).paperCard(radius: 22)
+                                }.padding(18).paperCard(radius: 18)
                             }.buttonStyle(.plain).accessibilityIdentifier("collection.tag." + tag.rawValue)
                         }
                     }
@@ -199,9 +203,10 @@ struct HomeView: View {
             .task(id: "\(store.indexVersion):\(query)") {
                 guard !query.isEmpty else { searchResults = []; return }
                 do { try await Task.sleep(nanoseconds: 250_000_000) } catch { return }
-                let snapshot = store.index, words = query.lowercased().split(whereSeparator: \.isWhitespace).map(String.init)
+                let snapshot = store.index, requested = query
                 let result = await Task.detached(priority: .utility) {
-                    snapshot.active.filter { record in words.allSatisfy { snapshot.search[record.id]?.contains($0) == true } }
+                    let ids = Set(PhotoSearchQuery.metadata(query: requested, records: snapshot.active, content: snapshot.search).map(\.id))
+                    return snapshot.active.filter { ids.contains($0.id) }
                 }.value
                 if !Task.isCancelled { searchResults = result }
             }
@@ -578,40 +583,61 @@ struct ReviewView: View {
 struct PendingView: View {
     @EnvironmentObject var store: LibraryStore
     @State private var selection: Set<String> = []
+    @State private var preview: ReviewPreview?
     private var valid: Set<String> { PendingSelection.valid(selection,pending:store.state.pending,visible:store.visibleIDs) }
     var body: some View {
-        ScrollView {
-            VStack(alignment:.leading,spacing:16) {
-                if !store.visiblePending.isEmpty {
-                    HStack {
-                        Text("已选 \(valid.count) 项").foregroundStyle(Palette.secondary)
-                        Spacer()
-                        Button(valid.count == store.visiblePending.count ? "取消全选" : "全选") {
-                            selection = valid.count == store.visiblePending.count ? [] : Set(store.visiblePending.map(\.id))
-                        }.accessibilityIdentifier("pending.selectAll")
+        VStack(spacing: 12) {
+            if store.visiblePending.isEmpty {
+                ContentUnavailableView("没有待删照片", systemImage: "checkmark.circle", description: Text("上滑照片后会先放在这里。"))
+            } else {
+                HStack(alignment: .center) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("已选 \(valid.count) 项").font(.headline).monospacedDigit().accessibilityIdentifier("pending.count")
+                        Text("长按拖动，连续选择").font(.caption).foregroundStyle(Palette.secondary)
                     }
+                    Spacer()
+                    Button(valid.count == store.visiblePending.count ? "取消全选" : "全选") {
+                        selection = valid.count == store.visiblePending.count ? [] : Set(store.visiblePending.map(\.id))
+                    }.frame(minHeight: 44).accessibilityIdentifier("pending.selectAll").disabled(store.busy)
+                }.padding(.horizontal, 20)
+                PendingPhotoGrid(records: store.visiblePending, selection: $selection, enabled: !store.busy) { id in
+                    preview = ReviewPreview(id: id, wasPending: true)
                 }
-                MediaGrid(records:store.visiblePending,selection:$selection)
-            }.padding()
+            }
         }.background(canvas).navigationTitle("待删")
         .toolbar {
-            Menu { Button("全部恢复") { store.restoreAllPending() } } label: { Image(systemName:"ellipsis.circle") }
+            Menu {
+                if valid.count == 1, let id = valid.first { Button("查看清晰", systemImage: "arrow.up.left.and.arrow.down.right") { preview = ReviewPreview(id: id, wasPending: true) } }
+                Button("全部恢复", systemImage: "arrow.uturn.backward") { store.restoreAllPending(); selection = [] }.disabled(store.busy || store.visiblePending.isEmpty)
+            } label: { Image(systemName:"ellipsis") }.accessibilityLabel("更多操作")
         }
         .safeAreaInset(edge:.bottom,spacing:0) {
             if !store.visiblePending.isEmpty {
-                HStack {
-                    Button("恢复所选 \(valid.count) 项") { store.restoreAllPending(ids:valid); selection = [] }
-                        .buttonStyle(.bordered).disabled(valid.isEmpty || store.busy)
-                    Button(role:.destructive) {
-                        let ids = valid
-                        Task { await store.deletePending(selected:ids) }
-                    } label: { Text(store.busy ? "等待系统处理…" : "删除所选 \(valid.count) 项").frame(maxWidth:.infinity) }
-                        .buttonStyle(.borderedProminent).disabled(valid.isEmpty || store.busy)
-                        .accessibilityIdentifier("pending.delete")
-                }.padding().background(.regularMaterial)
+                if #available(iOS 26.0, *) {
+                    GlassEffectContainer(spacing: 12) { actions }.padding(.horizontal, 16).padding(.vertical, 12)
+                } else { actions.padding(16).background(.regularMaterial) }
             }
         }
         .onChange(of:store.indexVersion) { _,_ in selection = valid }
+        .fullScreenCover(item: $preview) { item in
+            if store.state.records[item.id]?.isVideo == true { ReviewVideoPreview(id: item.id) }
+            else { OriginalPhotoView(id: item.id) }
+        }
+    }
+    private var actions: some View {
+        HStack(spacing: 12) {
+            Button { store.restoreAllPending(ids: valid); selection = [] } label: {
+                Label("恢复所选", systemImage: "arrow.uturn.backward").frame(maxWidth: .infinity, minHeight: 44)
+            }.albumGlassButton().disabled(valid.isEmpty || store.busy)
+                .accessibilityLabel("恢复所选 \(valid.count) 项").accessibilityIdentifier("pending.restore")
+            Button(role: .destructive) {
+                let ids = valid
+                Task { await store.deletePending(selected: ids) }
+            } label: {
+                Label(store.busy ? "处理中…" : "删除所选", systemImage: "trash").frame(maxWidth: .infinity, minHeight: 44)
+            }.tint(.red).albumGlassButton(prominent: true).disabled(valid.isEmpty || store.busy)
+                .accessibilityLabel(store.busy ? "等待系统处理…" : "删除所选 \(valid.count) 项").accessibilityIdentifier("pending.delete")
+        }.font(.subheadline.weight(.semibold))
     }
 }
 

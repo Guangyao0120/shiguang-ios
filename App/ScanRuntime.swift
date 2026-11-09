@@ -264,6 +264,8 @@ struct AlbumSettingsView: View {
                 Picker("显示模式", selection: $appearance) {
                     ForEach(AlbumAppearance.allCases) { Text(L.t($0.title)).tag($0.rawValue) }
                 }
+                NavigationLink { BackgroundSettingsView() } label: { Label("背景颜色", systemImage: "paintpalette") }
+                    .accessibilityIdentifier("settings.background")
             }
             Section {
                 Picker("默认范围", selection: $screenshots) { Text("截图").tag(true); Text("所有图片").tag(false) }

@@ -91,7 +91,7 @@ struct OriginalPhotoView: View {
                             Text(note).foregroundStyle(Palette.secondary)
                             Button("下载并查看原图") { loader.load(id, allowDownload: true) }.buttonStyle(QuietPrimaryButtonStyle())
                         }
-                    }.padding(28).frame(maxWidth: .infinity, maxHeight: .infinity).background(Palette.canvas)
+                    }.padding(28).frame(maxWidth: .infinity, maxHeight: .infinity).background(AlbumCanvas())
                 }
             }.navigationTitle("原图").navigationBarTitleDisplayMode(.inline)
                 .toolbar {

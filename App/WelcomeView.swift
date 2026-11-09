@@ -48,6 +48,6 @@ struct WelcomeView: View {
                 Spacer()
                 Text("\(step+1) / 4").font(.caption).foregroundStyle(Palette.secondary)
             }
-        }.padding(32).background(Palette.canvas)
+        }.padding(32).background(AlbumCanvas())
     }
 }

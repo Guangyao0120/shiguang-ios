@@ -42,12 +42,6 @@ jobs:
         run: |
           python -m pip install 'numpy==1.26.4' 'torch==2.2.2' 'torchvision==0.17.2' 'coremltools==8.3' 'git+https://github.com/openai/CLIP.git@d05afc436d78f1c48dc0dbf8e5980a9d471f35f6'
           python scripts/prepare_clip.py
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Shiguang-Local-CLIP
-          path: App/CLIPModels
-          if-no-files-found: error
-          retention-days: 7
       - name: Locate project
         run: |
           PROJECT=$(find "$GITHUB_WORKSPACE" -name Shiguang.xcodeproj -type d -print -quit)
@@ -88,9 +82,9 @@ jobs:
           name: Shiguang-ReviewUI
           path: ${{ runner.temp }}/ReviewUI
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 3
       - name: Capture light and dark layouts with sample records
-        if: github.event_name == 'workflow_dispatch' && inputs.test_filter == ''
+        if: success() && inputs.test_filter == ''
         run: |
           set -euo pipefail
           xcrun simctl bootstatus "$DEVICE_ID" -b
@@ -98,7 +92,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/Appearance"
           for MODE in light dark; do
             xcrun simctl ui "$DEVICE_ID" appearance "$MODE"
-            for TAB in 0 1 2 3 4; do
+            for TAB in 0 1 3 4; do
               SIMCTL_CHILD_SHIGUANG_DESIGN_PREVIEW=1 SIMCTL_CHILD_SHIGUANG_PREVIEW_TAB="$TAB" xcrun simctl launch --terminate-running-process "$DEVICE_ID" com.example.Shiguang
               sleep 3
               xcrun simctl io "$DEVICE_ID" screenshot "$RUNNER_TEMP/Appearance/$MODE-$TAB.png"
@@ -115,24 +109,12 @@ jobs:
             xcrun simctl io "$DEVICE_ID" screenshot "$RUNNER_TEMP/Appearance/language-$LANG.png"
           done
       - name: Upload appearance screenshots
-        if: github.event_name == 'workflow_dispatch' && inputs.test_filter == ''
+        if: success() && inputs.test_filter == ''
         uses: actions/upload-artifact@v4
         with:
           name: Shiguang-Appearance
           path: ${{ runner.temp }}/Appearance
-          retention-days: 14
-      - name: Package simulator app
-        if: github.event_name == 'workflow_dispatch' && inputs.test_filter == '' 
-        run: |
-          cd "$RUNNER_TEMP/ShiguangBuild/Build/Products/Debug-iphonesimulator"
-          ditto -c -k --sequesterRsrc --keepParent Shiguang.app "$RUNNER_TEMP/Shiguang-Simulator.zip"
-      - name: Upload simulator app (not installable on iPhone)
-        if: github.event_name == 'workflow_dispatch' && inputs.test_filter == '' 
-        uses: actions/upload-artifact@v4
-        with:
-          name: Shiguang-Simulator
-          path: ${{ runner.temp }}/Shiguang-Simulator.zip
-          retention-days: 7
+          retention-days: 3
       - name: Upload build and test reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -142,17 +124,7 @@ jobs:
             ${{ runner.temp }}/build.log
             ${{ runner.temp }}/tests.log
             ${{ runner.temp }}/TestResults.xcresult
-          retention-days: 7
-  iphone:
-    needs: simulator
-    runs-on: macos-15
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: Shiguang-Local-CLIP
-          path: App/CLIPModels
+          retention-days: 3
       - name: Archive for real iPhone (sign locally before install)
         run: |
           set -o pipefail
@@ -178,7 +150,7 @@ jobs:
           name: Shiguang-iPhone-IPA-unsigned
           path: ${{ runner.temp }}/Shiguang-iPhone-unsigned.ipa
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
       - name: Upload iPhone build reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -190,4 +162,4 @@ jobs:
             ${{ runner.temp }}/iphone-platform.txt
             ${{ runner.temp }}/iphone-sha256.txt
             ${{ runner.temp }}/Shiguang.xcarchive/dSYMs
-          retention-days: 14
+          retention-days: 3

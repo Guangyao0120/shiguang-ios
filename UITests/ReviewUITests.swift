@@ -6,11 +6,76 @@ final class ReviewUITests: XCTestCase {
     @MainActor
     func testHomePortraitReviewUsesTheSameControlsAndGestures() { checkRoute(tab:"整理",entry:"collection.tag.人像",prefix:false) }
     @MainActor
-    func testPeopleAllReviewUsesTheSameControlsAndGestures() { checkRoute(tab:"人物",entry:"collection.people.all",prefix:false) }
-    @MainActor
-    func testNamedPersonReviewUsesTheSameControlsAndGestures() { checkRoute(tab:"人物",entry:"collection.person.",prefix:true) }
-    @MainActor
     func testTripReviewUsesTheSameControlsAndGestures() { checkRoute(tab:"出游",entry:"collection.trip.",prefix:true) }
+
+    @MainActor
+    func testPendingLongPressDragSelectsAndDeselectsAWholeRow() {
+        let app = XCUIApplication()
+        app.launchEnvironment["SHIGUANG_DESIGN_PREVIEW"] = "1"
+        app.launchEnvironment["SHIGUANG_PREVIEW_LANGUAGE"] = "zh-Hans"
+        app.launch()
+        app.tabBars.buttons["待删"].tap()
+        let tiles = app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","pending.select."))
+        XCTAssertTrue(tiles.element(boundBy:2).waitForExistence(timeout:10))
+        tiles.element(boundBy:0).press(forDuration:0.45,thenDragTo:tiles.element(boundBy:2))
+        XCTAssertEqual(app.buttons["pending.delete"].label,"删除所选 3 项")
+        tiles.element(boundBy:0).press(forDuration:0.45,thenDragTo:tiles.element(boundBy:2))
+        XCTAssertEqual(app.buttons["pending.delete"].label,"删除所选 0 项")
+        XCTAssertFalse(app.buttons["pending.delete"].isEnabled)
+        let image = XCTAttachment(screenshot:app.screenshot()); image.name = "glass-pending"; image.lifetime = .keepAlways; add(image)
+        app.terminate()
+    }
+
+    @MainActor
+    func testFourTabsAndChineseSearchWorkWithoutAnImageIndexOrLanguageChooser() {
+        let app = XCUIApplication()
+        app.launchEnvironment["SHIGUANG_DESIGN_PREVIEW"] = "1"
+        app.launchEnvironment["SHIGUANG_PREVIEW_LANGUAGE"] = "zh-Hans"
+        app.launch()
+        XCTAssertEqual(app.tabBars.buttons.count,4)
+        XCTAssertFalse(app.tabBars.buttons["人物"].exists)
+        app.buttons["home.semanticSearch"].tap()
+        let field = app.textFields["search.query"]
+        XCTAssertTrue(field.waitForExistence(timeout:10))
+        field.tap(); field.typeText("人")
+        app.buttons["search.submit"].tap()
+        let results = app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","media.open."))
+        XCTAssertTrue(results.firstMatch.waitForExistence(timeout:15))
+        XCTAssertFalse(app.alerts.firstMatch.exists)
+        app.buttons["清空搜索"].tap(); field.typeText("法官")
+        app.buttons["search.submit"].tap()
+        let judge = app.buttons["media.open.preview-11"]
+        XCTAssertTrue(judge.waitForExistence(timeout:10))
+        XCTAssertEqual(app.staticTexts["search.count"].label,"1 项")
+        XCTAssertFalse(app.alerts.firstMatch.exists)
+        let image = XCTAttachment(screenshot:app.screenshot()); image.name = "chinese-search"; image.lifetime = .keepAlways; add(image)
+        app.terminate()
+    }
+
+    @MainActor
+    func testBackgroundPresetsAndCustomHexPersistWithoutRemovingNavigation() {
+        let app = XCUIApplication()
+        app.launchEnvironment["SHIGUANG_DESIGN_PREVIEW"] = "1"
+        app.launchEnvironment["SHIGUANG_PREVIEW_LANGUAGE"] = "zh-Hans"
+        app.launchEnvironment["SHIGUANG_PREVIEW_SCREEN"] = "settings"
+        app.launch()
+        app.buttons["settings.background"].tap()
+        let white = app.buttons["background.white"]
+        XCTAssertTrue(white.waitForExistence(timeout:10)); white.tap()
+        app.buttons["background.black"].tap()
+        XCTAssertTrue(app.buttons["background.black"].isSelected)
+        let field = app.textFields["background.hex"]
+        field.tap()
+        if let current = field.value as? String { field.typeText(String(repeating:XCUIKeyboardKey.delete.rawValue,count:current.count)) }
+        field.typeText("152638")
+        app.buttons["background.apply"].tap()
+        app.terminate(); app.launch()
+        app.buttons["settings.background"].tap()
+        XCTAssertEqual(app.textFields["background.hex"].value as? String,"152638")
+        let image = XCTAttachment(screenshot:app.screenshot()); image.name = "custom-background"; image.lifetime = .keepAlways; add(image)
+        app.buttons["background.system"].tap()
+        app.terminate()
+    }
 
     @MainActor
     func testPendingSelectionSurvivesTabChangesAndRestoreOnlyAffectsSelectedItems() {

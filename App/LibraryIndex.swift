@@ -36,6 +36,7 @@ struct LibraryIndex {
             searchable += record.customTags
             searchable += personNames + tripNames
             searchable += categories.map(\.rawValue)
+            searchable += record.visualLabels ?? []
             index.search[record.id] = searchable.joined(separator: " ").lowercased()
             if state.pending.contains(record.id) { index.pending.append(record); continue }
             index.active.append(record)

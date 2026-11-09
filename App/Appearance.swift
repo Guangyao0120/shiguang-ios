@@ -12,7 +12,7 @@ enum DesignPreview {
     }
     static var tab: Int {
         guard enabled, let value = Int(ProcessInfo.processInfo.environment["SHIGUANG_PREVIEW_TAB"] ?? "0"), (0...4).contains(value) else { return 0 }
-        return value
+        return value == 2 ? 0 : value
     }
     static var screen: String { enabled ? (ProcessInfo.processInfo.environment["SHIGUANG_PREVIEW_SCREEN"] ?? "") : "" }
 }
@@ -26,14 +26,13 @@ enum Palette {
                            blue: CGFloat(hex & 255) / 255, alpha: 1)
         })
     }
-    static let canvas = adaptive(0xF5F3ED, 0x141A17)
-    static let surface = adaptive(0xFFFDF8, 0x232C26)
-    static let ink = adaptive(0x29372D, 0xF1F2E9)
-    static let secondary = adaptive(0x667066, 0xB8C5B9)
-    static let accent = adaptive(0x50664A, 0xC3D5AE)
-    static let onAccent = adaptive(0xFFFDF8, 0x21301B)
-    static let destructive = adaptive(0xA8332D, 0xE59C94)
-    static let line = adaptive(0xDDDCD1, 0x465448)
+    static let surface = Color(uiColor: .secondarySystemGroupedBackground)
+    static let ink = Color(uiColor: .label)
+    static let secondary = Color(uiColor: .secondaryLabel)
+    static let accent = adaptive(0x286D88, 0x9ED7EB)
+    static let onAccent = adaptive(0xFFFFFF, 0x122C38)
+    static let destructive = Color(uiColor: .systemRed)
+    static let line = Color(uiColor: .separator)
 }
 
 struct QuietPrimaryButtonStyle: ButtonStyle {
@@ -44,7 +43,7 @@ struct QuietPrimaryButtonStyle: ButtonStyle {
             .font(.subheadline.weight(.semibold))
             .padding(.horizontal, 20).padding(.vertical, 13)
             .foregroundStyle(Palette.onAccent)
-            .background(configuration.role == .destructive ? Palette.destructive : Palette.accent, in: Capsule())
+            .background(configuration.role == .destructive ? Palette.destructive : Palette.accent, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .opacity(enabled ? (configuration.isPressed ? 0.78 : 1) : 0.38)
             .scaleEffect(configuration.isPressed && !reduceMotion ? 0.98 : 1)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: configuration.isPressed)
@@ -52,26 +51,34 @@ struct QuietPrimaryButtonStyle: ButtonStyle {
 }
 
 struct PaperCard: ViewModifier {
-    var radius: CGFloat = 24
+    var radius: CGFloat = 18
     func body(content: Content) -> some View {
         content
-            .background(Palette.surface, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
-            .overlay { RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(Palette.line.opacity(0.55), lineWidth: 0.5) }
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .overlay { RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(Palette.line.opacity(0.35), lineWidth: 0.5) }
     }
 }
 
 extension View {
-    func paperCard(radius: CGFloat = 24) -> some View { modifier(PaperCard(radius: radius)) }
-    func paperList() -> some View { scrollContentBackground(.hidden).background(Palette.canvas) }
+    func paperCard(radius: CGFloat = 18) -> some View { modifier(PaperCard(radius: radius)) }
+    func paperList() -> some View { scrollContentBackground(.hidden).background(AlbumCanvas()) }
+    @ViewBuilder func albumGlassButton(prominent: Bool = false) -> some View {
+        if #available(iOS 26.0, *) {
+            if prominent { self.buttonStyle(.glassProminent).buttonBorderShape(.roundedRectangle(radius: 14)) }
+            else { self.buttonStyle(.glass).buttonBorderShape(.roundedRectangle(radius: 14)) }
+        } else {
+            if prominent { self.buttonStyle(.borderedProminent).buttonBorderShape(.roundedRectangle(radius: 14)) }
+            else { self.buttonStyle(.bordered).buttonBorderShape(.roundedRectangle(radius: 14)) }
+        }
+    }
 }
 
 enum AlbumTab: Int, CaseIterable {
-    case library, trips, people, pending, ai
+    case library = 0, trips = 1, pending = 3, ai = 4
     var title: String {
         switch self {
         case .library: return "整理"
         case .trips: return "出游"
-        case .people: return "人物"
         case .pending: return "待删"
         case .ai: return "AI"
         }
@@ -80,7 +87,6 @@ enum AlbumTab: Int, CaseIterable {
         switch self {
         case .library: return "square.grid.2x2"
         case .trips: return "map"
-        case .people: return "person.2"
         case .pending: return "trash"
         case .ai: return "sparkles"
         }
@@ -153,8 +159,8 @@ struct AlbumHelpView: View {
                     Text("自动跳过已完成的图片。设置中可选择截图或全部图片，以及每次整理数量。")
                     Text("后台整理由系统安排，可在设置中关闭。仅在 iCloud 的原件需先下载。")
                 }
-                Section("标签与人物") {
-                    Text("分类可重叠，人物由你命名关联。视频详情可本机转写并生成标题；相似照片只是候选。")
+                Section("分类与出游") {
+                    Text("同一张照片可属于多个分类与行程。视频详情可本机转写并生成标题；相似照片只是候选。")
                 }
                 Section("照片与隐私") {
                     Text("上滑加入待删，原图仍在。集中删除需系统确认，iCloud 会同步删除；可在苹果照片「最近删除」中恢复。")

@@ -193,7 +193,7 @@ struct AIOrganizeView: View {
                     }
                 }
             }.padding()
-        }.background(Palette.canvas).navigationTitle("AI 整理").navigationBarTitleDisplayMode(.inline)
+        }.background(AlbumCanvas()).navigationTitle("AI 整理").navigationBarTitleDisplayMode(.inline)
             .toolbar { NavigationLink { AISettingsView() } label: { Image(systemName: "gearshape") } }
             .onChange(of: command) { _, _ in plan = nil; reviewed = false }
             .task(id: AIQueryKey(plan: plan, revision: store.indexVersion)) {

@@ -6,6 +6,8 @@ struct ShiguangApp: App {
     @StateObject private var store = LibraryStore()
     @AppStorage("appLanguage") private var language = AppLanguage.system.rawValue
     @AppStorage("appearance") private var appearance = AlbumAppearance.system.rawValue
+    @AppStorage("albumBackground") private var background = AlbumBackground.system.rawValue
+    @AppStorage("albumBackgroundHex") private var backgroundHex = "EDF3EE"
     init() {
         #if DEBUG
         if DesignPreview.enabled, let code = ProcessInfo.processInfo.environment["SHIGUANG_PREVIEW_LANGUAGE"] {
@@ -22,7 +24,7 @@ struct ShiguangApp: App {
                     guard url.scheme == "shiguang", url.host == "scan" else { return }
                     if url.path == "/stop" { ScanRuntime.shared.pause(); SemanticSearchController.shared.pause() }
                 }
-                .preferredColorScheme(AlbumAppearance(rawValue: appearance)?.colorScheme)
+                .preferredColorScheme((AlbumBackground(rawValue: background) ?? .system).scheme(appearance: AlbumAppearance(rawValue: appearance) ?? .system, custom: backgroundHex))
         }
     }
 }

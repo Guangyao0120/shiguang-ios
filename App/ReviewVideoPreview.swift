@@ -55,7 +55,7 @@ struct ReviewVideoPreview: View {
                         if !loader.loading && !DesignPreview.enabled {
                             Button("下载并播放原视频") { loader.load(id:id,download:true) }.buttonStyle(.bordered)
                         }
-                    }.padding().frame(maxWidth:.infinity,maxHeight:.infinity).background(Palette.canvas)
+                    }.padding().frame(maxWidth:.infinity,maxHeight:.infinity).background(AlbumCanvas())
                 }
             }.navigationTitle("视频").navigationBarTitleDisplayMode(.inline)
                 .toolbar {

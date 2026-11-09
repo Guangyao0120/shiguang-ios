@@ -4,6 +4,53 @@ import UIKit
 @testable import Shiguang
 
 final class RulesTests: XCTestCase {
+    func testDragRangeSelectionReversesWithoutLosingPreviousChoices() {
+        let ids = (0..<10).map(String.init)
+        let range = DragSelection(ids: ids, selection: ["0","9"], anchor: 2)
+        XCTAssertEqual(range.selection(through: 5, ids: ids), ["0","2","3","4","5","9"])
+        XCTAssertEqual(range.selection(through: 3, ids: ids), ["0","2","3","9"])
+        XCTAssertEqual(range.selection(through: 1, ids: ids), ["0","1","2","9"])
+        XCTAssertEqual(range.selection(through: 100, ids: ids), ["0","9"])
+    }
+    func testDraggingFromASelectedPhotoRemovesOnlyThatRange() {
+        let ids = ["a","b","c","d","e"]
+        let range = DragSelection(ids: ids, selection: ["a","b","c","e"], anchor: 1)
+        XCTAssertEqual(range.selection(through: 3, ids: ids), ["a","e"])
+        XCTAssertEqual(range.selection(through: 1, ids: ids), ["a","c","e"])
+    }
+    func testChineseQueriesDistinguishJudgeFromBaguetteAndNeedNoLanguageGuess() {
+        XCTAssertEqual(PhotoSearchQuery.english("法官"), "a photo of a judge in a courtroom")
+        XCTAssertEqual(PhotoSearchQuery.english("法棍"), "a photo of a baguette or sliced French bread")
+        XCTAssertEqual(PhotoSearchQuery.english("截圖"), "a screenshot")
+        XCTAssertEqual(PhotoSearchQuery.category("人"), .portrait)
+        XCTAssertEqual(PhotoSearchQuery.sourceLanguage("法官"), "zh-Hans")
+        XCTAssertEqual(PhotoSearchQuery.sourceLanguage(PhotoSearchQuery.normalized("機場裡的行李")), "zh-Hans")
+        XCTAssertEqual(PhotoSearchQuery.sourceLanguage("ホテルの朝食"), "ja")
+        XCTAssertEqual(PhotoSearchQuery.sourceLanguage("아침 식사"), "ko")
+    }
+    func testMetadataFindsPeopleAndTraditionalTextWithoutAnyCLIPVectors() {
+        var person = media("portrait"); person.tags = [.portrait]
+        let judge = media("judge"), other = media("bread")
+        let content = ["judge":"法官在法庭宣讀判決", "bread":"sliced bread"]
+        XCTAssertEqual(PhotoSearchQuery.metadata(query:"人",records:[person,judge,other],content:content).map(\.id), ["portrait"])
+        XCTAssertEqual(PhotoSearchQuery.metadata(query:"宣读判决",records:[person,judge,other],content:content).map(\.id), ["judge"])
+        XCTAssertEqual(PhotoSearchQuery.metadata(query:"法官",records:[judge,other],content:content).map(\.id), ["judge"])
+        XCTAssertTrue(PhotoSearchQuery.metadata(query:"法官",records:[other],content:content).isEmpty)
+        XCTAssertTrue(PhotoSearchQuery.metadata(query:"  ",records:[person],content:content).isEmpty)
+        let merged = PhotoSearchQuery.merged(metadata:[SemanticHit(id:"judge",score:1)],visual:[SemanticHit(id:"judge",score:0.8),SemanticHit(id:"bread",score:0.3)])
+        XCTAssertEqual(merged.map(\.id),["judge","bread"])
+    }
+    func testBackgroundValidationAndAutomaticTextContrast() {
+        XCTAssertEqual(AlbumBackground.parse(" #ff00AA "),0xFF00AA)
+        for invalid in ["123", "1234567", "GG0000", "FFFFFF00", ""] { XCTAssertNil(AlbumBackground.parse(invalid)) }
+        XCTAssertTrue(AlbumBackground.isDark(0x000000)); XCTAssertTrue(AlbumBackground.isDark(0x152638))
+        XCTAssertFalse(AlbumBackground.isDark(0xFFFFFF)); XCTAssertFalse(AlbumBackground.isDark(0xF8EEF1))
+        XCTAssertEqual(AlbumBackground.white.hex(dark:true,custom:""),0xFFFFFF)
+        XCTAssertEqual(AlbumBackground.black.hex(dark:false,custom:""),0x000000)
+        XCTAssertEqual(AlbumBackground.custom.hex(dark:false,custom:"152638"),0x152638)
+        XCTAssertEqual(AlbumBackground.custom.scheme(appearance:.system,custom:"152638"),.dark)
+        XCTAssertEqual(AlbumBackground.custom.scheme(appearance:.dark,custom:"FFFFFF"),.light)
+    }
     override func setUpWithError() throws { executionTimeAllowance = 60 }
     func testLegacySceneryRefinesOnceWithoutRepeatingCompletedOCR() {
         var old = media("old"); old.tags = [.scenery]; old.analyzed = true; old.text = "Keep OCR"
