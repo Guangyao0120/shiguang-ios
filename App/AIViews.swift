@@ -10,7 +10,7 @@ struct AISettingsView: View {
     @State private var testTask: Task<Void, Never>?
     var body: some View {
         Form {
-            Section("你的 DeepSeek") {
+            Section {
                 LabeledContent("接口", value: "api.deepseek.com")
                 TextField("模型名称", text: $model).textInputAutocapitalization(.never).autocorrectionDisabled()
                 SecureField(saved ? "已保存 · 填写新 Key 可替换" : "粘贴 API Key", text: $key)
@@ -33,6 +33,8 @@ struct AISettingsView: View {
                     do { try APIKeyStore.delete(); saved = false; key = ""; result = "密钥已从本机移除。" }
                     catch { result = error.localizedDescription }
                 }.disabled(!saved || testing)
+            } header: {
+                Text("你的 DeepSeek")
             } footer: {
                 Text("推荐模型 deepseek-flash。接口固定为 DeepSeek 官方 HTTPS 地址，密钥只保存在此设备解锁时可访问的钥匙串。")
             }
@@ -211,3 +213,4 @@ struct AIOrganizeView: View {
         }
     }
 }
+
