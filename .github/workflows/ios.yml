@@ -1,6 +1,12 @@
 name: iOS build and tests
 on:
   workflow_dispatch:
+    inputs:
+      test_filter:
+        description: 'Optional XCTest identifier for a targeted rerun; empty runs the full suite'
+        required: false
+        default: ''
+        type: string
   push:
     branches: [main]
     paths:
@@ -56,13 +62,17 @@ jobs:
           xcodebuild -project "$SHIGUANG_PROJECT" -scheme Shiguang -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/ShiguangBuild" CODE_SIGNING_ALLOWED=NO build 2>&1 | tee "$RUNNER_TEMP/build.log"
       - name: Run unit tests on available iPhone
         timeout-minutes: 25
+        env:
+          TEST_FILTER: ${{ inputs.test_filter }}
         run: |
           set -o pipefail
           xcrun simctl install "$DEVICE_ID" "$RUNNER_TEMP/ShiguangBuild/Build/Products/Debug-iphonesimulator/Shiguang.app"
           xcrun simctl privacy "$DEVICE_ID" grant photos com.example.Shiguang
           python3 scripts/prepare_photo_fixtures.py
           xcrun simctl addmedia "$DEVICE_ID" "$RUNNER_TEMP/PhotoFixtures/"*.png
-          xcodebuild -project "$SHIGUANG_PROJECT" -scheme Shiguang -destination "platform=iOS Simulator,id=$DEVICE_ID" -derivedDataPath "$RUNNER_TEMP/ShiguangBuild" -resultBundlePath "$RUNNER_TEMP/TestResults.xcresult" CODE_SIGNING_ALLOWED=NO -parallel-testing-enabled NO -test-timeouts-enabled YES -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 600 test 2>&1 | tee "$RUNNER_TEMP/tests.log"
+          TEST_ARGS=()
+          if [ -n "$TEST_FILTER" ]; then TEST_ARGS+=("-only-testing:$TEST_FILTER"); fi
+          xcodebuild -project "$SHIGUANG_PROJECT" -scheme Shiguang -destination "platform=iOS Simulator,id=$DEVICE_ID" -derivedDataPath "$RUNNER_TEMP/ShiguangBuild" -resultBundlePath "$RUNNER_TEMP/TestResults.xcresult" CODE_SIGNING_ALLOWED=NO -parallel-testing-enabled NO -test-timeouts-enabled YES -default-test-execution-time-allowance 120 -maximum-test-execution-time-allowance 600 "${TEST_ARGS[@]}" test 2>&1 | tee "$RUNNER_TEMP/tests.log"
       - name: Export review interaction screenshots
         if: always()
         continue-on-error: true
@@ -80,7 +90,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
       - name: Capture light and dark layouts with sample records
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && inputs.test_filter == ''
         run: |
           set -euo pipefail
           xcrun simctl bootstatus "$DEVICE_ID" -b
@@ -105,19 +115,19 @@ jobs:
             xcrun simctl io "$DEVICE_ID" screenshot "$RUNNER_TEMP/Appearance/language-$LANG.png"
           done
       - name: Upload appearance screenshots
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && inputs.test_filter == ''
         uses: actions/upload-artifact@v4
         with:
           name: Shiguang-Appearance
           path: ${{ runner.temp }}/Appearance
           retention-days: 14
       - name: Package simulator app
-        if: github.event_name == 'workflow_dispatch' 
+        if: github.event_name == 'workflow_dispatch' && inputs.test_filter == '' 
         run: |
           cd "$RUNNER_TEMP/ShiguangBuild/Build/Products/Debug-iphonesimulator"
           ditto -c -k --sequesterRsrc --keepParent Shiguang.app "$RUNNER_TEMP/Shiguang-Simulator.zip"
       - name: Upload simulator app (not installable on iPhone)
-        if: github.event_name == 'workflow_dispatch' 
+        if: github.event_name == 'workflow_dispatch' && inputs.test_filter == '' 
         uses: actions/upload-artifact@v4
         with:
           name: Shiguang-Simulator
