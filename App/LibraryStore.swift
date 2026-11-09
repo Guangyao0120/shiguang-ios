@@ -85,9 +85,12 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
         guard !loaded else { refreshIfNeeded(); return }
         starting = true
         defer { starting = false }
-        do { state = try await disk.load() }
+        do { state = try await disk.load(); storageReadable = true }
         catch {
             storageReadable = false
+            if UIApplication.shared.applicationState != .active && !UIApplication.shared.isProtectedDataAvailable {
+                status = "等待设备解锁"; return
+            }
             message = "无法读取整理记录，已停止覆盖保存，原图未受影响：\(error.localizedDescription)"
         }
         authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
@@ -206,7 +209,6 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
             }
             for (position, record) in todo.enumerated() {
                 if Task.isCancelled { return }
-                guard UIApplication.shared.isProtectedDataAvailable else { self.status = "解锁后继续，进度已保留"; return }
                 var updated = record
                 let image = await PhotoAccess.image(id: record.id, size: CGSize(width: record.isScreenshot ? 1024 : 640, height: record.isScreenshot ? 1024 : 640), highQuality: true)
                 guard !Task.isCancelled else { return }

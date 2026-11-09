@@ -19,7 +19,9 @@ final class ScanRuntime: NSObject, ObservableObject, UNUserNotificationCenterDel
     private var continued: BGTask?
     private var lease = UIBackgroundTaskIdentifier.invalid
     private var registered = false
-    private var userPaused = false
+    private var userPaused = UserDefaults.standard.bool(forKey: "scanPaused") {
+        didSet { UserDefaults.standard.set(userPaused, forKey: "scanPaused") }
+    }
     private var scheduledScope = true
     private var continuedRegistered = false
     private var backgroundEnabled: Bool { UserDefaults.standard.object(forKey: "backgroundEnabled") as? Bool ?? true }
@@ -75,7 +77,7 @@ final class ScanRuntime: NSObject, ObservableObject, UNUserNotificationCenterDel
         runScan(scope: scheduledScope, limit: limit == 0 ? Int.max : limit, task: task)
     }
     private func runScheduled(_ task: BGTask) {
-        guard backgroundEnabled, UIApplication.shared.isProtectedDataAvailable, let store else { task.setTaskCompleted(success: false); schedule(); return }
+        guard backgroundEnabled, !userPaused, let store else { task.setTaskCompleted(success: false); return }
         task.expirationHandler = { Task { @MainActor in ScanRuntime.shared.expired() } }
         continued = task; userPaused = false
         Task {

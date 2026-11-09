@@ -77,6 +77,7 @@ private struct OriginalQuickLook: UIViewControllerRepresentable {
 
 struct OriginalPhotoView: View {
     let id: String
+    @EnvironmentObject var store: LibraryStore
     @Environment(\.dismiss) private var dismiss
     @StateObject private var loader = OriginalPhotoLoader()
     var body: some View {
@@ -93,7 +94,14 @@ struct OriginalPhotoView: View {
                     }.padding(28).frame(maxWidth: .infinity, maxHeight: .infinity).background(Palette.canvas)
                 }
             }.navigationTitle("原图").navigationBarTitleDisplayMode(.inline)
-                .toolbar { Button("完成") { dismiss() } }
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("完成") { dismiss() } }
+                    ToolbarItem(placement: .primaryAction) {
+                        Button(role: store.state.pending.contains(id) ? nil : .destructive) {
+                            if store.state.pending.contains(id) { store.restore(id) } else { store.stage(id) }
+                        } label: { Label(store.state.pending.contains(id) ? "恢复" : "待删", systemImage: "trash") }
+                    }
+                }
         }.task { loader.load(id) }.onDisappear { loader.cancel() }
     }
 }

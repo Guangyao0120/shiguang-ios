@@ -73,7 +73,7 @@ actor LibraryDisk {
     func write(_ state: LibraryState, revision: Int) throws {
         guard revision >= lastRevision else { return }
         let data = try JSONEncoder().encode(state)
-        try data.write(to: url, options: [.atomic, .completeFileProtectionUnlessOpen])
+        try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         lastRevision = revision
     }
 }
