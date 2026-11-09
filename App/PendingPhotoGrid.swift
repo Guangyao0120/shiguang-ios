@@ -29,6 +29,7 @@ struct PendingPhotoGrid: UIViewRepresentable {
         layout.minimumInteritemSpacing = 4; layout.minimumLineSpacing = 4
         let view = UICollectionView(frame: .zero, collectionViewLayout: layout)
         view.backgroundColor = .clear; view.alwaysBounceVertical = true
+        view.tintColor = UIColor(Palette.accent)
         // Let photos scroll underneath the floating glass actions, but leave
         // enough trailing space to bring the final row entirely above them.
         view.contentInset = UIEdgeInsets(top: 0, left: 16, bottom: 100, right: 16)
@@ -93,7 +94,7 @@ struct PendingPhotoGrid: UIViewRepresentable {
             guard let collection, parent.enabled else { stop(); return }
             switch gesture.state {
             case .began:
-                guard let index = index(at: gesture.location(in: collection)) else { return }
+                guard let index = collection.indexPathForItem(at: gesture.location(in: collection))?.item else { return }
                 range = DragSelection(ids: ids, selection: parent.selection, anchor: index)
                 press = gesture; update(index)
                 UISelectionFeedbackGenerator().selectionChanged()

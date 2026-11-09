@@ -64,10 +64,10 @@ extension View {
     func paperList() -> some View { scrollContentBackground(.hidden).background(AlbumCanvas()) }
     @ViewBuilder func albumGlassButton(prominent: Bool = false) -> some View {
         if #available(iOS 26.0, *) {
-            if prominent { self.buttonStyle(.glassProminent).buttonBorderShape(.roundedRectangle(radius: 14)) }
+            if prominent { self.buttonStyle(.glassProminent).foregroundStyle(Palette.onAccent).buttonBorderShape(.roundedRectangle(radius: 14)) }
             else { self.buttonStyle(.glass).buttonBorderShape(.roundedRectangle(radius: 14)) }
         } else {
-            if prominent { self.buttonStyle(.borderedProminent).buttonBorderShape(.roundedRectangle(radius: 14)) }
+            if prominent { self.buttonStyle(.borderedProminent).foregroundStyle(Palette.onAccent).buttonBorderShape(.roundedRectangle(radius: 14)) }
             else { self.buttonStyle(.bordered).buttonBorderShape(.roundedRectangle(radius: 14)) }
         }
     }

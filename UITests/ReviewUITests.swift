@@ -15,7 +15,7 @@ final class ReviewUITests: XCTestCase {
         app.launchEnvironment["SHIGUANG_PREVIEW_LANGUAGE"] = "zh-Hans"
         app.launch()
         app.tabBars.buttons["待删"].tap()
-        let tiles = app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","pending.select."))
+        let tiles = app.descendants(matching:.any).matching(NSPredicate(format:"identifier BEGINSWITH %@","pending.select."))
         XCTAssertTrue(tiles.element(boundBy:2).waitForExistence(timeout:10))
         tiles.element(boundBy:0).press(forDuration:0.45,thenDragTo:tiles.element(boundBy:2))
         XCTAssertEqual(app.buttons["pending.delete"].label,"删除所选 3 项")
@@ -87,7 +87,7 @@ final class ReviewUITests: XCTestCase {
         let delete = app.buttons["pending.delete"]
         XCTAssertTrue(delete.waitForExistence(timeout:10)); XCTAssertTrue(delete.isHittable)
         XCTAssertFalse(delete.isEnabled)
-        let selections = app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","pending.select."))
+        let selections = app.descendants(matching:.any).matching(NSPredicate(format:"identifier BEGINSWITH %@","pending.select."))
         XCTAssertGreaterThan(selections.count,1)
         let before = selections.count
         selections.element(boundBy:0).tap()
@@ -143,6 +143,16 @@ final class ReviewUITests: XCTestCase {
                 authorize.tap()
                 let settings = XCUIApplication(bundleIdentifier:"com.apple.Preferences")
                 let photosSetting = settings.descendants(matching:.any).matching(NSPredicate(format:"label IN %@",["Photos","照片"])).firstMatch
+                if !photosSetting.waitForExistence(timeout:3) {
+                    // Some simulator launches open the Settings root rather than
+                    // the requested app page. Follow the same route a person uses.
+                    let apps = settings.descendants(matching:.any).matching(NSPredicate(format:"label IN %@",["Apps","应用"])).firstMatch
+                    for _ in 0..<12 { if apps.isHittable { break }; settings.swipeUp() }
+                    XCTAssertTrue(apps.isHittable); apps.tap()
+                    let ours = settings.descendants(matching:.any).matching(NSPredicate(format:"label IN %@",["拾光","Shiguang"])).firstMatch
+                    for _ in 0..<12 { if ours.isHittable { break }; settings.swipeUp() }
+                    XCTAssertTrue(ours.isHittable); ours.tap()
+                }
                 XCTAssertTrue(photosSetting.waitForExistence(timeout:12)); photosSetting.tap()
                 let full = settings.descendants(matching:.any).matching(NSPredicate(format:"label IN %@",["Full Access","完全访问","所有照片","全部照片"])).firstMatch
                 XCTAssertTrue(full.waitForExistence(timeout:10)); full.tap()
@@ -171,7 +181,7 @@ final class ReviewUITests: XCTestCase {
         app.buttons["review.done"].tap()
         app.navigationBars.buttons.element(boundBy:0).tap()
         app.tabBars.buttons["待删"].tap()
-        let choices = app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","pending.select."))
+        let choices = app.descendants(matching:.any).matching(NSPredicate(format:"identifier BEGINSWITH %@","pending.select."))
         XCTAssertTrue(choices.firstMatch.waitForExistence(timeout:12)); choices.firstMatch.tap()
         let delete = app.buttons["pending.delete"]
         XCTAssertTrue(delete.isEnabled); XCTAssertTrue(delete.isHittable); delete.tap()

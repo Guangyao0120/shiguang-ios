@@ -217,7 +217,9 @@ final class SemanticSearchController: ObservableObject {
                     hits = PhotoSearchQuery.merged(metadata: metadata, visual: ranked)
                 }
                 if !building { status = indexed == 0 ? "已显示标签与文字匹配；画面索引尚未建立。" : "已搜索 \(indexed)/\(total) 张，按画面相关度排列。" }
-                if startIndex && indexed == 0 && total > 0 && !building && !DesignPreview.enabled {
+                // A category such as people is already answered by the saved
+                // Vision tags. Do not start a full-library CLIP pass for it.
+                if startIndex && PhotoSearchQuery.category(original) == nil && indexed == 0 && total > 0 && !building && !DesignPreview.enabled {
                     if store.scanning || store.busy || store.refreshing { status = "已显示标签与文字匹配。请暂停整理，再建立画面索引。" }
                     else { build(store) }
                 }
@@ -281,7 +283,7 @@ struct SemanticSearchView: View {
                         Button(engine.indexed == 0 ? "建立画面索引" : "补充新增照片") { engine.build(store) }
                             .disabled(store.scanning || store.busy || store.refreshing)
                     }
-                }.padding().paperCard()
+                }.padding().frame(maxWidth: .infinity, alignment: .leading).paperCard()
                 if engine.searched {
                     HStack {
                         Text("搜索结果").font(.title3.weight(.semibold))

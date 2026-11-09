@@ -75,7 +75,7 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
             var sample = LibraryState()
             let person = NamedPerson(name: "桐桐")
             sample.people = [person]
-            for i in 0..<78 {
+            for i in 0..<120 {
                 var record = MediaRecord(id: "preview-\(i)", date: Date().addingTimeInterval(Double(-i * 3600)), isVideo: false, isScreenshot: i % 2 == 0, duration: 0)
                 record.analyzed = true
                 record.tags = [PhotoTag.allCases[i % PhotoTag.allCases.count]]

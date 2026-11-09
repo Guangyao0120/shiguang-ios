@@ -607,7 +607,7 @@ struct PendingView: View {
                 }.padding(.horizontal, 20)
                 PendingPhotoGrid(records: store.visiblePending, selection: $selection, enabled: !deleting) { id in
                     preview = ReviewPreview(id: id, wasPending: true)
-                }
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }.background(canvas).navigationTitle("待删")
         .toolbar {
@@ -645,7 +645,7 @@ struct PendingView: View {
                 }
             } label: {
                 Label(L.t(deleting ? "处理中…" : "删除所选"), systemImage: "trash").frame(maxWidth: .infinity, minHeight: 44)
-            }.tint(.red).albumGlassButton(prominent: true).disabled(valid.isEmpty || deleting || (store.busy && !search.building))
+            }.tint(Palette.destructive).albumGlassButton(prominent: true).disabled(valid.isEmpty || deleting || (store.busy && !search.building))
                 .accessibilityLabel(deleting ? L.t("等待系统处理…") : L.f("删除所选 %d 项",valid.count)).accessibilityIdentifier("pending.delete")
         }.font(.subheadline.weight(.semibold))
     }

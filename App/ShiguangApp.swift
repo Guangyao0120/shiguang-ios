@@ -18,7 +18,7 @@ struct ShiguangApp: App {
     }
     var body: some Scene {
         WindowGroup {
-            RootView().environmentObject(store).tint(Palette.accent).foregroundStyle(Palette.ink)
+            RootView().environmentObject(store).tint(Palette.accent)
                 .environment(\.locale, Locale(identifier: (AppLanguage(rawValue: language) ?? .system).code))
                 .onOpenURL { url in
                     guard url.scheme == "shiguang", url.host == "scan" else { return }

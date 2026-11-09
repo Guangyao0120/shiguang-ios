@@ -11,7 +11,7 @@ final class RulesTests: XCTestCase {
         var state = LibraryState(); state.records[record.id] = record
         store.seedForTesting(state)
         let engine = SemanticSearchController()
-        engine.search(PhotoSearchQuery.english("人"),store:store,originalQuery:"人",startIndex:false)
+        engine.search(PhotoSearchQuery.english("人"),store:store,originalQuery:"人")
         for _ in 0..<200 {
             if engine.searched && !engine.searching { break }
             try await Task.sleep(for:.milliseconds(10))
