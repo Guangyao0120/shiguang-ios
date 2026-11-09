@@ -44,14 +44,16 @@ private final class BoundedImageLoader {
     }
     func image(id: String, size: CGSize, highQuality: Bool) async -> UIImage? {
         guard !Task.isCancelled else { return nil }
-        let size = CGSize(width: min(1024, size.width), height: min(1024, size.height))
+        let edge: CGFloat = highQuality ? 2048 : 1024
+        let size = CGSize(width: min(edge, size.width), height: min(edge, size.height))
         let key = "\(id):\(Int(size.width)):q\(highQuality)"
         if !highQuality, let cached = cache.object(forKey: key as NSString) { return cached }
         let ticket = Ticket()
         return await withTaskCancellationHandler(operation: {
             await withCheckedContinuation { continuation in
                 guard !ticket.cancelled && !Task.isCancelled else { continuation.resume(returning: nil); return }
-                queue.append(Job(ticket: ticket, id: id, size: size, quality: highQuality, key: key, continuation: continuation))
+                let job = Job(ticket: ticket, id: id, size: size, quality: highQuality, key: key, continuation: continuation)
+                if highQuality { queue.insert(job, at: 0) } else { queue.append(job) }
                 pump()
             }
         }, onCancel: {

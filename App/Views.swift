@@ -82,6 +82,7 @@ struct HomeView: View {
     @State private var creatingTag = false
     @State private var tagName = ""
     @AppStorage("screenshotsOnly") private var screenshotsOnly = true
+    @ObservedObject private var runtime = ScanRuntime.shared
     private let columns = [GridItem(.flexible()), GridItem(.flexible())]
     var body: some View {
         ScrollView {
@@ -99,9 +100,9 @@ struct HomeView: View {
                         .font(.subheadline).foregroundStyle(Palette.secondary).lineLimit(2)
                     if store.scanning { ProgressView(value: store.progress) }
                     HStack {
-                        Button(store.scanning ? "暂停" : (screenshotsOnly ? "整理截图" : "开始整理")) {
+                        Button(store.scanning ? "暂停" : (runtime.launching ? "准备中…" : (screenshotsOnly ? "整理截图" : "开始整理"))) {
                             if store.scanning { ScanRuntime.shared.pause() } else { ScanRuntime.shared.start() }
-                        }.buttonStyle(QuietPrimaryButtonStyle()).disabled(store.busy || store.refreshing || !store.loaded)
+                        }.buttonStyle(QuietPrimaryButtonStyle()).disabled(runtime.launching || store.busy || store.refreshing || !store.loaded)
                         Menu("更多") {
                             Button("刷新相册") { store.refresh() }
                             Button("整理所有图片") { ScanRuntime.shared.start(screenshotsOnly: false) }
@@ -308,6 +309,9 @@ struct Thumbnail: View {
             guard !DesignPreview.enabled else { return }
             let result = await PhotoAccess.image(id: id, size: CGSize(width: resolution, height: resolution))
             if !Task.isCancelled { image = result }
+            guard !Task.isCancelled else { return }
+            let clear = await PhotoAccess.image(id: id, size: CGSize(width: resolution, height: resolution), highQuality: true)
+            if !Task.isCancelled, let clear { image = clear }
         }
         .onDisappear { image = nil }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in image = nil }
@@ -340,7 +344,7 @@ struct DetailView: View {
                     if let player { VideoPlayer(player: player).frame(height: 340) }
                     else {
                         Button { if record.isVideo { loadVideo() } else { showingOriginal = true } } label: {
-                            Thumbnail(id: id, fit: true, resolution: 1000).frame(height: 340).clipped()
+                            Thumbnail(id: id, fit: true, resolution: 2048).frame(height: 340).clipped()
                                 .overlay(alignment: .bottomTrailing) {
                                     Label(record.isVideo ? "播放" : "查看清晰原图", systemImage: record.isVideo ? "play.fill" : "arrow.up.left.and.arrow.down.right")
                                         .font(.caption.weight(.medium)).padding(10).background(.regularMaterial, in: Capsule()).padding(10)
@@ -458,12 +462,13 @@ struct ReviewView: View {
     let ids: [String]
     @State private var index = 0
     @State private var offset: CGSize = .zero
+    @State private var showingOriginal = false
     private var current: String? { index < ids.count ? ids[index] : nil }
     var body: some View {
         VStack(spacing: 18) {
             Text("\(min(index + 1, ids.count)) / \(ids.count)").font(.subheadline).foregroundStyle(Palette.secondary)
             if let current {
-                Thumbnail(id: current, fit: true, resolution: 1000).frame(maxHeight: .infinity).clipped()
+                Thumbnail(id: current, fit: true, resolution: 2048).frame(maxHeight: .infinity).clipped()
                     .clipShape(RoundedRectangle(cornerRadius: 20))
                     .offset(offset).rotationEffect(.degrees(Double(offset.width / 30)))
                     .overlay(alignment: .top) {
@@ -476,6 +481,10 @@ struct ReviewView: View {
                     })
                 Text("上滑待删 · 左右跳过").font(.footnote).foregroundStyle(Palette.secondary)
                 HStack {
+                    if store.state.records[current]?.isVideo != true {
+                        Button("查看原图", systemImage: "arrow.up.left.and.arrow.down.right") { showingOriginal = true }
+                            .buttonStyle(.bordered)
+                    }
                     Button("跳过") { index += 1 }.buttonStyle(.bordered)
                     Button("放入待删", role: .destructive) { stageCurrent() }.buttonStyle(.bordered)
                 }
@@ -492,6 +501,9 @@ struct ReviewView: View {
             .toolbar { Button("完成") { dismiss() } }
             .onAppear { skipPending() }
             .onChange(of: index) { _, _ in skipPending() }
+            .fullScreenCover(isPresented: $showingOriginal, onDismiss: { skipPending() }) {
+                if let current { OriginalPhotoView(id: current) }
+            }
     }
     private func stageCurrent() {
         guard let current else { return }

@@ -4,6 +4,60 @@ import UIKit
 @testable import Shiguang
 
 final class RulesTests: XCTestCase {
+    @MainActor
+    func testForegroundScanStartsBeforeNotificationPermissionOrBackgroundHandler() async throws {
+        let suite = "ScanStartup-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: "backgroundEnabled"); defaults.set(true, forKey: "completionNotice")
+        var permission: CheckedContinuation<Void, Never>?
+        var backgroundRequests = 0
+        let scanner = StubScanDriver()
+        let runtime = ScanRuntime(defaults: defaults, submitBackground: { backgroundRequests += 1 }, requestNotifications: {
+            await withCheckedContinuation { permission = $0 }
+        })
+        runtime.store = scanner
+        runtime.start()
+        // The background callback intentionally never arrives, and permission
+        // intentionally stays pending until after these assertions.
+        XCTAssertEqual(scanner.scanCalls, 1)
+        XCTAssertTrue(scanner.scanning)
+        XCTAssertFalse(runtime.launching)
+        XCTAssertEqual(backgroundRequests, 1)
+        for _ in 0..<20 { if permission != nil { break }; await Task.yield() }
+        XCTAssertNotNil(permission)
+        permission?.resume()
+        scanner.finish()
+    }
+    @MainActor
+    func testRejectedBackgroundRequestKeepsForegroundScanRunningAndPreventsDoubleStart() async throws {
+        let suite = "ScanRejection-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: "backgroundEnabled"); defaults.set(false, forKey: "completionNotice")
+        let scanner = StubScanDriver()
+        let runtime = ScanRuntime(defaults: defaults, submitBackground: { throw NSError(domain: "SchedulerTest", code: 1) })
+        runtime.store = scanner; runtime.start(); runtime.start()
+        XCTAssertEqual(scanner.scanCalls, 1)
+        XCTAssertTrue(scanner.scanning)
+        XCTAssertTrue(runtime.note.contains("前台整理已开始"))
+        scanner.finish()
+    }
+    @MainActor
+    func testEmptyAndRefreshingLibrariesGiveFeedbackInsteadOfWaitingForBackground() async throws {
+        let suite = "ScanEmpty-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let scanner = StubScanDriver(); scanner.state.records = [:]
+        var backgroundRequests = 0
+        let runtime = ScanRuntime(defaults: defaults, submitBackground: { backgroundRequests += 1 })
+        runtime.store = scanner; runtime.start()
+        XCTAssertEqual(scanner.status, "暂无待整理图片")
+        XCTAssertEqual(scanner.scanCalls, 0)
+        scanner.refreshing = true; runtime.start()
+        XCTAssertEqual(scanner.status, "正在读取相册，请稍后再试")
+        XCTAssertEqual(backgroundRequests, 0)
+    }
     func testCustomCategoriesExistBeforeAssignmentAndSurviveStorage() throws {
         var state = LibraryState(); state.customTagNames = [" 工作 ", "工作", "纪念"]
         let decoded = try JSONDecoder().decode(LibraryState.self, from: JSONEncoder().encode(state))
@@ -262,4 +316,33 @@ final class RulesTests: XCTestCase {
         XCTAssertTrue(plan.matches(decoded, people: [], trips: []))
         XCTAssertFalse(plan.matches(media("b"), people: [], trips: []))
     }
+}
+
+@MainActor
+private final class StubScanDriver: ScanDriver {
+    var scanning = false
+    var refreshing = false
+    var busy = false
+    var loaded = true
+    var permitted = true
+    var state = LibraryState()
+    var status = ""
+    var scanCalls = 0
+    private var completion: ((Bool, Int) -> Void)?
+    var records: [MediaRecord] { Array(state.records.values) }
+    init() {
+        let record = MediaRecord(id: "test-image", date: Date(), isVideo: false, isScreenshot: true, duration: 0)
+        state.records[record.id] = record
+    }
+    func scan(screenshotsOnly: Bool, limit: Int, onFinish: ((Bool, Int) -> Void)?) {
+        scanCalls += 1; scanning = true; status = "开始整理"; completion = onFinish
+    }
+    func finish() {
+        scanning = false
+        for id in state.records.keys { state.records[id]?.analyzed = true }
+        let callback = completion; completion = nil; callback?(true, 0)
+    }
+    func pause() { scanning = false }
+    func save(immediately: Bool) { }
+    func prepareForBackgroundScan() async { }
 }

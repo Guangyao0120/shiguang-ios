@@ -4,7 +4,7 @@ import Combine
 import UIKit
 
 @MainActor
-final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserver {
+final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserver, ScanDriver {
     @Published var state = LibraryState() { didSet { revision += 1; prepareIndex() } }
     @Published var authorization = PHPhotoLibrary.authorizationStatus(for: .readWrite)
     @Published var scanning = false
@@ -197,6 +197,7 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
         let todo = ScanPolicy.candidates(records.compactMap { state.records[$0.id] }, screenshotsOnly: screenshotsOnly, limit: limit)
         guard !todo.isEmpty else { status = "暂无待识别的\(screenshotsOnly ? "截图" : "图片")"; onFinish?(true, 0); return }
         scanning = true; progress = 0
+        status = "开始整理 · \(todo.count)项"
         scanTask = Task { [weak self] in
             guard let self else { return }
             var updates: [MediaRecord] = []
@@ -210,6 +211,7 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
             for (position, record) in todo.enumerated() {
                 if Task.isCancelled { return }
                 var updated = record
+                self.status = "读取图片 · \(position + 1)/\(todo.count)"
                 let image = await PhotoAccess.image(id: record.id, size: CGSize(width: record.isScreenshot ? 1024 : 640, height: record.isScreenshot ? 1024 : 640), highQuality: true)
                 guard !Task.isCancelled else { return }
                 if let image {

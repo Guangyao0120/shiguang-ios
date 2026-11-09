@@ -11,24 +11,52 @@ enum AlbumAppearance: String, CaseIterable, Identifiable {
 }
 
 @MainActor
+protocol ScanDriver: AnyObject {
+    var scanning: Bool { get }
+    var refreshing: Bool { get }
+    var busy: Bool { get }
+    var loaded: Bool { get }
+    var permitted: Bool { get }
+    var records: [MediaRecord] { get }
+    var state: LibraryState { get }
+    var status: String { get set }
+    func scan(screenshotsOnly: Bool, limit: Int, onFinish: ((Bool, Int) -> Void)?)
+    func pause()
+    func save(immediately: Bool)
+    func prepareForBackgroundScan() async
+}
+
+@MainActor
 final class ScanRuntime: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
     static let shared = ScanRuntime()
     @Published var note = ""
     @Published var launching = false
-    weak var store: LibraryStore?
+    weak var store: (any ScanDriver)?
+    private let defaults: UserDefaults
+    private let submitBackgroundOverride: (() throws -> Void)?
+    private let notificationRequestOverride: (() async -> Void)?
+    private var activeRun: UUID?
     private var continued: BGTask?
     private var lease = UIBackgroundTaskIdentifier.invalid
     private var registered = false
-    private var userPaused = UserDefaults.standard.bool(forKey: "scanPaused") {
-        didSet { UserDefaults.standard.set(userPaused, forKey: "scanPaused") }
+    private var userPaused: Bool {
+        get { defaults.bool(forKey: "scanPaused") }
+        set { defaults.set(newValue, forKey: "scanPaused") }
     }
     private var scheduledScope = true
     private var continuedRegistered = false
-    private var backgroundEnabled: Bool { UserDefaults.standard.object(forKey: "backgroundEnabled") as? Bool ?? true }
-    private var noticesEnabled: Bool { UserDefaults.standard.object(forKey: "completionNotice") as? Bool ?? true }
+    private var backgroundEnabled: Bool { defaults.object(forKey: "backgroundEnabled") as? Bool ?? true }
+    private var noticesEnabled: Bool { defaults.object(forKey: "completionNotice") as? Bool ?? true }
     private var identifiers: [String] { Bundle.main.object(forInfoDictionaryKey: "BGTaskSchedulerPermittedIdentifiers") as? [String] ?? [] }
     private var continuedID: String { identifiers.first(where: { $0.hasSuffix(".organize") }) ?? "com.example.Shiguang.organize" }
     private var resumeID: String { identifiers.first(where: { $0.hasSuffix(".resume") }) ?? "com.example.Shiguang.resume" }
+
+    init(defaults: UserDefaults = .standard, submitBackground: (() throws -> Void)? = nil, requestNotifications: (() async -> Void)? = nil) {
+        self.defaults = defaults
+        self.submitBackgroundOverride = submitBackground
+        self.notificationRequestOverride = requestNotifications
+        super.init()
+    }
 
     func register() {
         guard !registered, !DesignPreview.enabled else { return }
@@ -44,37 +72,51 @@ final class ScanRuntime: NSObject, ObservableObject, UNUserNotificationCenterDel
         }
     }
     func start(screenshotsOnly: Bool? = nil, limit: Int? = nil) {
-        guard !launching, let store, !store.scanning, !store.refreshing, !store.busy, store.loaded else { return }
-        let scope = screenshotsOnly ?? (UserDefaults.standard.object(forKey: "screenshotsOnly") as? Bool ?? true)
-        let setting = UserDefaults.standard.object(forKey: "scanLimit") as? Int ?? 0
+        guard let store else { note = "相册尚未准备好"; return }
+        guard !launching, !store.scanning else { return }
+        guard store.loaded, !store.refreshing else { store.status = "正在读取相册，请稍后再试"; return }
+        guard !store.busy else { store.status = "请等待当前操作完成"; return }
+        guard store.permitted else { store.status = "请先允许照片访问"; return }
+        let scope = screenshotsOnly ?? (defaults.object(forKey: "screenshotsOnly") as? Bool ?? true)
+        let setting = defaults.object(forKey: "scanLimit") as? Int ?? 0
         let count = limit ?? (setting == 0 ? Int.max : setting)
         guard !ScanPolicy.candidates(store.records.compactMap { store.state.records[$0.id] }, screenshotsOnly: scope, limit: 1).isEmpty else {
             store.status = "暂无待整理图片"; return
         }
         userPaused = false; scheduledScope = scope
-        UserDefaults.standard.set(scope, forKey: "resumeScreenshotsOnly")
-        UserDefaults.standard.set(count, forKey: "resumeScanLimit")
+        defaults.set(scope, forKey: "resumeScreenshotsOnly")
+        defaults.set(count, forKey: "resumeScanLimit")
         launching = true
-        Task {
-            defer { launching = false }
-            if noticesEnabled { await requestNotificationPermission() }
-            guard !userPaused, !store.scanning, !store.busy, !store.refreshing else { return }
-            if backgroundEnabled, #available(iOS 26.0, *), continuedRegistered {
+        // Foreground work starts synchronously. Neither permission UI nor a
+        // delayed/absent background launch handler can hold the scan hostage.
+        runScan(scope: scope, limit: count, task: nil)
+        launching = false
+        guard activeRun != nil, store.scanning else { return }
+        if noticesEnabled { Task { await requestNotificationPermission() } }
+        guard backgroundEnabled else { return }
+        if let submitBackgroundOverride {
+            do { try submitBackgroundOverride(); note = "已申请持续后台整理" }
+            catch { note = "前台整理已开始，后台暂未获批准" }
+        } else if #available(iOS 26.0, *), continuedRegistered {
                 let request = BGContinuedProcessingTaskRequest(identifier: continuedID, title: "拾光正在整理照片", subtitle: "本机识别，不上传图片")
                 request.strategy = .fail
-                do { try BGTaskScheduler.shared.submit(request); note = "已申请持续后台整理"; return }
-                catch { note = "系统暂未批准持续后台，切后台后可短暂继续" }
-            }
-            runScan(scope: scope, limit: count, task: nil)
+                do { try BGTaskScheduler.shared.submit(request); note = "已申请持续后台整理" }
+                catch { note = "前台整理已开始，后台暂未获批准" }
         }
     }
     @available(iOS 26.0, *)
     private func runContinued(_ task: BGTask) {
         guard let task = task as? BGContinuedProcessingTask else { task.setTaskCompleted(success: false); return }
+        guard activeRun != nil, !userPaused, store?.scanning == true, continued == nil else {
+            task.setTaskCompleted(success: false); return
+        }
+        // Attach background runtime to the existing foreground scan. Never
+        // launch a second scan from a delayed callback.
         continued = task
+        endLease()
         task.expirationHandler = { Task { @MainActor in ScanRuntime.shared.expired() } }
-        let limit = UserDefaults.standard.integer(forKey: "resumeScanLimit")
-        runScan(scope: scheduledScope, limit: limit == 0 ? Int.max : limit, task: task)
+        task.progress.totalUnitCount = 100
+        task.progress.completedUnitCount = 0
     }
     private func runScheduled(_ task: BGTask) {
         guard backgroundEnabled, !userPaused, let store else { task.setTaskCompleted(success: false); return }
@@ -83,16 +125,20 @@ final class ScanRuntime: NSObject, ObservableObject, UNUserNotificationCenterDel
         Task {
             await store.prepareForBackgroundScan()
             guard !store.scanning, !store.busy, store.permitted else { task.setTaskCompleted(success: false); continued = nil; return }
-            let scope = UserDefaults.standard.object(forKey: "resumeScreenshotsOnly") as? Bool ?? true
+            let scope = self.defaults.object(forKey: "resumeScreenshotsOnly") as? Bool ?? true
             runScan(scope: scope, limit: 100, task: task)
         }
     }
     private func runScan(scope: Bool, limit: Int, task: BGTask?) {
         guard let store, !store.scanning, !store.busy, !store.refreshing else { task?.setTaskCompleted(success: false); continued = nil; return }
+        let run = UUID(); activeRun = run
+        store.status = "正在准备图片…"
         store.scan(screenshotsOnly: scope, limit: limit) { [weak self] finished, count in
-            guard let self else { return }
-            task?.setTaskCompleted(success: finished)
+            guard let self, self.activeRun == run else { return }
+            self.activeRun = nil
+            self.continued?.setTaskCompleted(success: finished)
             self.continued = nil; self.endLease()
+            BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: self.continuedID)
             self.note = finished ? "本次整理完成" : "进度已保存"
             if finished && count > 0 { Task { await self.notify(count: count, scope: scope) } }
             if !self.userPaused { self.schedule() }
@@ -130,7 +176,7 @@ final class ScanRuntime: NSObject, ObservableObject, UNUserNotificationCenterDel
     }
     func schedule() {
         guard backgroundEnabled, !userPaused, let store, store.loaded else { return }
-        let scope = UserDefaults.standard.object(forKey: "resumeScreenshotsOnly") as? Bool ?? true
+        let scope = defaults.object(forKey: "resumeScreenshotsOnly") as? Bool ?? true
         guard !ScanPolicy.candidates(store.records.compactMap { store.state.records[$0.id] }, screenshotsOnly: scope, limit: 1).isEmpty else { return }
         let request = BGProcessingTaskRequest(identifier: resumeID)
         request.requiresNetworkConnectivity = false; request.requiresExternalPower = false
@@ -143,6 +189,7 @@ final class ScanRuntime: NSObject, ObservableObject, UNUserNotificationCenterDel
         else { BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: resumeID) }
     }
     func requestNotificationPermission() async {
+        if let notificationRequestOverride { await notificationRequestOverride(); return }
         guard !DesignPreview.enabled else { return }
         let center = UNUserNotificationCenter.current()
         let settings = await center.notificationSettings()
