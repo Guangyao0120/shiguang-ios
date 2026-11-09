@@ -97,5 +97,5 @@ jobs:
             ${{ runner.temp }}/iphone-architectures.txt
             ${{ runner.temp }}/iphone-platform.txt
             ${{ runner.temp }}/iphone-sha256.txt
+            ${{ runner.temp }}/Shiguang.xcarchive/dSYMs
           retention-days: 14
-

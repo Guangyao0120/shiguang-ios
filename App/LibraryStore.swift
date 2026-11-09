@@ -21,6 +21,7 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
     private var revision = 0
     private var scanTask: Task<Void, Never>?
     private var saveTask: Task<Void, Never>?
+    private var pendingSaveID: UUID?
     private var indexTask: Task<Void, Never>?
     private var indexWorker: Task<LibraryIndex, Never>?
     private var refreshTask: Task<Void, Never>?
@@ -100,12 +101,18 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
 
     func save(immediately: Bool = false) {
         guard loaded && storageReadable else { return }
+        // While scanning, coalesce all five-record commits into one latest snapshot
+        // every five seconds instead of repeatedly encoding the entire library.
+        if scanning && !immediately && pendingSaveID != nil { return }
         saveTask?.cancel()
+        let ticket = UUID(), delay: UInt64 = scanning ? 5_000_000_000 : 800_000_000
+        pendingSaveID = ticket
         saveTask = Task { [weak self] in
             if !immediately {
-                do { try await Task.sleep(nanoseconds: 800_000_000) } catch { return }
+                do { try await Task.sleep(nanoseconds: delay) } catch { return }
             }
-            guard let self, !Task.isCancelled else { return }
+            guard let self, !Task.isCancelled, self.pendingSaveID == ticket else { return }
+            self.pendingSaveID = nil
             let snapshot = self.state, version = self.revision
             do { try await self.disk.write(snapshot, revision: version) }
             catch { self.message = "整理记录保存失败：\(error.localizedDescription)" }
