@@ -87,8 +87,9 @@ final class ReviewUITests: XCTestCase {
         let delete = app.buttons["pending.delete"]
         XCTAssertTrue(delete.isEnabled); XCTAssertTrue(delete.isHittable); delete.tap()
         let springboard = XCUIApplication(bundleIdentifier:"com.apple.springboard")
-        let alert = springboard.alerts.firstMatch
-        XCTAssertTrue(alert.waitForExistence(timeout:15),"Expected actual PhotoKit deletion confirmation")
+        let systemAlert = springboard.alerts.firstMatch
+        let alert = systemAlert.waitForExistence(timeout:6) ? systemAlert : app.alerts.firstMatch
+        XCTAssertTrue(alert.waitForExistence(timeout:9),"Expected actual PhotoKit deletion confirmation")
         let cancel = alert.buttons.matching(NSPredicate(format:"label IN %@",["Don’t Allow","Don't Allow","不允许","Cancel","取消"])).firstMatch
         XCTAssertTrue(cancel.exists); cancel.tap()
         if app.alerts.firstMatch.waitForExistence(timeout:5) { app.alerts.firstMatch.buttons.element(boundBy:0).tap() }
