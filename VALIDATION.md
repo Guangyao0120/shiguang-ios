@@ -2,6 +2,15 @@
 
 日期：2026-11-09。
 
+## 真机 IPA 构建通过（尚未签名安装）
+
+- 提交：`0e8cda10eb44c122220d8fa51e8ebf2e6f063b2f`。
+- [成功构建 42586125067](https://github.com/Guangyao0120/shiguang-ios/actions/runs/42586125067)：simulator 与 iphone 两个 job 均 success。
+- `ARCHIVE SUCCEEDED`，真机 Release archive；生成 `Shiguang-iPhone-unsigned.ipa`。
+- 本地下载后再次验证：481,912 字节；ZIP 完整；包含 `Payload/Shiguang.app`；Info.plist 的平台 iPhoneOS、最低系统17.0；Mach-O CPU arm64、LC_BUILD_VERSION platform=2（iOS）。
+- 云端与本地 SHA-256 一致：`b4f11ab6be52ae1ab1bd58b4fa1f661fff6aa61b973235a9cb34b15a975d57a4`。
+- 当前未签名；没有使用用户的 Apple 凭据，没有安装到实际手机。用户暂时不能连接手机，已选择先交付安装包。
+
 ## GitHub macOS 云端实测通过
 
 - 仓库：`Guangyao0120/shiguang-ios`（私有）。
@@ -31,7 +40,7 @@
 - DeepSeek 真实账户请求、Keychain 真机读写与删除、网络取消、图片模型识别效果；没有使用或索取真实 Key，不宣称已联通。
 - iPhone 真机运行、系统授权与确认弹窗、iCloud 资源缺失、Live Photo 删除、视频播放、内存/发热/耗电、分类准确率、无障碍与界面视觉验收。
 
-本地主机为 Windows；通过用户授权的 GitHub 私有仓库运行 macOS Actions，已完成真实 SDK 编译、链接及模拟器 XCTest。未签名或生成可供手机安装的 IPA，也未使用任何真实 DeepSeek Key。
+本地主机为 Windows；通过用户授权的 GitHub 私有仓库运行 macOS Actions，已完成真实 SDK 编译、链接、模拟器 XCTest 与真机 IPA 打包。尚未签名、安装到手机，也未使用任何真实 DeepSeek Key。
 
 ## 真机验收顺序
 

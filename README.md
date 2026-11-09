@@ -9,13 +9,15 @@
 3. 连接 iPhone，开启开发者模式，选择手机运行。首次启动授权照片读取和修改权限。
 4. 也可以先在模拟器里导入少量测试照片，再运行。可在 Xcode 的 Product → Test 执行单元测试。
 
-已在 GitHub Actions 的 macOS / Xcode 16.4 环境完成模拟器构建及 13 项 XCTest（0 失败）。[查看通过的构建](https://github.com/Guangyao0120/shiguang-ios/actions/runs/42585309508)。真实 iPhone 的签名、安装、图库操作与 DeepSeek 实际调用尚未验收；当前产物是模拟器 App，不是手机可安装 IPA。
+已在 GitHub Actions 的 macOS / Xcode 16.4 环境完成模拟器构建及 13 项 XCTest（0 失败），并另外完成真机 Release archive 与未签名 IPA 打包。[查看真机包构建](https://github.com/Guangyao0120/shiguang-ios/actions/runs/42586125067)。真实 iPhone 的签名、安装、图库操作与 DeepSeek 实际调用尚未验收。`Shiguang-iPhone-unsigned.ipa` 是 iOS/arm64 真机包，但需要在 Windows 签名工具中用你自己的 Apple 账户签名后安装，不能直接点开安装。
 
 ## GitHub 云端构建
 
 工程已上传到私有仓库 [Guangyao0120/shiguang-ios](https://github.com/Guangyao0120/shiguang-ios)。打开仓库的 Actions → iOS build and tests → Run workflow，选择 main 即可手动构建。修改 App、Tests、Xcode 工程或工作流并推送 main 也会自动构建。
 
 绿色 success 表示构建和测试通过。运行详情底部的 Artifacts 包含 `Shiguang-Simulator` 与 `Shiguang-Build-Reports`，保留 7 天。前者只用于 Mac 上的 iOS 模拟器，不能装进真实 iPhone；后者是编译日志与 XCTest 报告。构建不需要 DeepSeek Key 或苹果签名证书，测试使用虚构 Key 和响应夹具，不会产生 DeepSeek 调用费用。GitHub Actions 自身计算用量按账户额度计费。
+
+新增 `iphone` job 依赖模拟器测试通过后执行：生成 `Shiguang-iPhone-IPA-unsigned` 与 `Shiguang-iPhone-Reports`，保留14天。真机包已验证 Mach-O arm64、平台 iOS（不是 iOSSimulator）及 SHA-256。用 Sideloadly 等 Windows 签名工具可尝试以免费 Apple 个人账户签名安装；账户验证和手机信任/开发者模式需要用户本人操作，免费签名通常7天到期。不要把 Apple 密码或验证码放进 GitHub Secrets。
 
 ## DeepSeek 接入（v0.2）
 
