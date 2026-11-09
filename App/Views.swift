@@ -582,8 +582,10 @@ struct ReviewView: View {
 
 struct PendingView: View {
     @EnvironmentObject var store: LibraryStore
+    @ObservedObject private var search = SemanticSearchController.shared
     @State private var selection: Set<String> = []
     @State private var preview: ReviewPreview?
+    @State private var deleting = false
     private var valid: Set<String> { PendingSelection.valid(selection,pending:store.state.pending,visible:store.visibleIDs) }
     var body: some View {
         VStack(spacing: 12) {
@@ -598,9 +600,9 @@ struct PendingView: View {
                     Spacer()
                     Button(valid.count == store.visiblePending.count ? "取消全选" : "全选") {
                         selection = valid.count == store.visiblePending.count ? [] : Set(store.visiblePending.map(\.id))
-                    }.frame(minHeight: 44).accessibilityIdentifier("pending.selectAll").disabled(store.busy)
+                    }.frame(minHeight: 44).accessibilityIdentifier("pending.selectAll").disabled(deleting)
                 }.padding(.horizontal, 20)
-                PendingPhotoGrid(records: store.visiblePending, selection: $selection, enabled: !store.busy) { id in
+                PendingPhotoGrid(records: store.visiblePending, selection: $selection, enabled: !deleting) { id in
                     preview = ReviewPreview(id: id, wasPending: true)
                 }
             }
@@ -608,10 +610,10 @@ struct PendingView: View {
         .toolbar {
             Menu {
                 if valid.count == 1, let id = valid.first { Button("查看清晰", systemImage: "arrow.up.left.and.arrow.down.right") { preview = ReviewPreview(id: id, wasPending: true) } }
-                Button("全部恢复", systemImage: "arrow.uturn.backward") { store.restoreAllPending(); selection = [] }.disabled(store.busy || store.visiblePending.isEmpty)
+                Button("全部恢复", systemImage: "arrow.uturn.backward") { store.restoreAllPending(); selection = [] }.disabled(deleting || store.visiblePending.isEmpty)
             } label: { Image(systemName:"ellipsis") }.accessibilityLabel("更多操作")
         }
-        .safeAreaInset(edge:.bottom,spacing:0) {
+        .overlay(alignment: .bottom) {
             if !store.visiblePending.isEmpty {
                 if #available(iOS 26.0, *) {
                     GlassEffectContainer(spacing: 12) { actions }.padding(.horizontal, 16).padding(.vertical, 12)
@@ -628,15 +630,20 @@ struct PendingView: View {
         HStack(spacing: 12) {
             Button { store.restoreAllPending(ids: valid); selection = [] } label: {
                 Label("恢复所选", systemImage: "arrow.uturn.backward").frame(maxWidth: .infinity, minHeight: 44)
-            }.albumGlassButton().disabled(valid.isEmpty || store.busy)
+            }.albumGlassButton().disabled(valid.isEmpty || deleting)
                 .accessibilityLabel("恢复所选 \(valid.count) 项").accessibilityIdentifier("pending.restore")
             Button(role: .destructive) {
                 let ids = valid
-                Task { await store.deletePending(selected: ids) }
+                deleting = true
+                Task {
+                    defer { deleting = false }
+                    if search.building { await search.pauseAndWait() }
+                    await store.deletePending(selected: ids)
+                }
             } label: {
-                Label(store.busy ? "处理中…" : "删除所选", systemImage: "trash").frame(maxWidth: .infinity, minHeight: 44)
-            }.tint(.red).albumGlassButton(prominent: true).disabled(valid.isEmpty || store.busy)
-                .accessibilityLabel(store.busy ? "等待系统处理…" : "删除所选 \(valid.count) 项").accessibilityIdentifier("pending.delete")
+                Label(deleting ? "处理中…" : "删除所选", systemImage: "trash").frame(maxWidth: .infinity, minHeight: 44)
+            }.tint(.red).albumGlassButton(prominent: true).disabled(valid.isEmpty || deleting || (store.busy && !search.building))
+                .accessibilityLabel(deleting ? "等待系统处理…" : "删除所选 \(valid.count) 项").accessibilityIdentifier("pending.delete")
         }.font(.subheadline.weight(.semibold))
     }
 }

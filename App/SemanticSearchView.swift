@@ -168,6 +168,11 @@ final class SemanticSearchController: ObservableObject {
         BGTaskScheduler.shared.cancel(taskRequestWithIdentifier:resumeID)
         worker?.cancel(); SortActivityController.shared.end()
     }
+    func pauseAndWait() async {
+        let current = worker
+        pause()
+        await current?.value
+    }
     private func notifyFinished() async {
         guard UserDefaults.standard.object(forKey:"completionNotice") as? Bool ?? true else { return }
         let center = UNUserNotificationCenter.current()

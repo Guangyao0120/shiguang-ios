@@ -29,7 +29,10 @@ struct PendingPhotoGrid: UIViewRepresentable {
         layout.minimumInteritemSpacing = 4; layout.minimumLineSpacing = 4
         let view = UICollectionView(frame: .zero, collectionViewLayout: layout)
         view.backgroundColor = .clear; view.alwaysBounceVertical = true
-        view.contentInset = UIEdgeInsets(top: 0, left: 16, bottom: 12, right: 16)
+        // Let photos scroll underneath the floating glass actions, but leave
+        // enough trailing space to bring the final row entirely above them.
+        view.contentInset = UIEdgeInsets(top: 0, left: 16, bottom: 100, right: 16)
+        view.verticalScrollIndicatorInsets.bottom = 100
         view.register(PhotoCell.self, forCellWithReuseIdentifier: "photo")
         view.dataSource = context.coordinator; view.delegate = context.coordinator
         view.accessibilityIdentifier = "pending.grid"
