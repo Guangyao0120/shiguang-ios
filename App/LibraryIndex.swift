@@ -61,23 +61,6 @@ enum ScanPolicy {
     }
 }
 
-actor LibraryDisk {
-    let url: URL
-    private var lastRevision = -1
-    init(url: URL) { self.url = url }
-    func load() throws -> LibraryState {
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        guard FileManager.default.fileExists(atPath: url.path) else { return LibraryState() }
-        return try JSONDecoder().decode(LibraryState.self, from: Data(contentsOf: url))
-    }
-    func write(_ state: LibraryState, revision: Int) throws {
-        guard revision >= lastRevision else { return }
-        let data = try JSONEncoder().encode(state)
-        try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
-        lastRevision = revision
-    }
-}
-
 enum LibraryMetadata {
     static func visibleIdentifiers() -> Set<String> {
         let assets = PHAsset.fetchAssets(with: nil)

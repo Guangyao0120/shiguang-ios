@@ -210,7 +210,7 @@ struct CollectionView: View {
     @EnvironmentObject var store: LibraryStore
     var title: String
     var scope: CollectionScope
-    @State private var reviewing = false
+    @State private var reviewSession: ReviewSession?
     @State private var renaming = false
     @State private var newName = ""
     var records: [MediaRecord] {
@@ -232,7 +232,7 @@ struct CollectionView: View {
                 HStack {
                     Text("\(records.count) 项").foregroundStyle(Palette.secondary)
                     Spacer()
-                    Button("连续整理") { reviewing = true }.buttonStyle(QuietPrimaryButtonStyle()).disabled(records.isEmpty)
+                    Button("连续整理") { reviewSession = ReviewSession(ids: records.map(\.id)) }.buttonStyle(QuietPrimaryButtonStyle()).disabled(records.isEmpty)
                 }
                 MediaGrid(records: records)
             }.padding()
@@ -255,7 +255,7 @@ struct CollectionView: View {
                 }
             } label: { Image(systemName: "ellipsis.circle") }
         }
-        .sheet(isPresented: $reviewing) { NavigationStack { ReviewView(ids: records.map(\.id)) } }
+        .sheet(item: $reviewSession) { session in NavigationStack { ReviewView(ids: session.ids) } }
         .alert("行程名称", isPresented: $renaming) {
             TextField("例如：中秋 · 长沙", text: $newName)
             Button("保存") { if case .trip(let id) = scope { store.renameTrip(id, name: newName) } }
@@ -492,8 +492,9 @@ struct ReviewView: View {
                     .overlay(alignment: .top) {
                         if offset.height < -45 { Label("放入待删", systemImage: "trash").padding().background(.regularMaterial, in: Capsule()).foregroundStyle(.red) }
                     }
+                    .contentShape(Rectangle())
                     .gesture(DragGesture().onChanged { offset = $0.translation }.onEnded { value in
-                        if value.translation.height < -100 { stageCurrent() }
+                        if value.translation.height < -100 && abs(value.translation.height) > abs(value.translation.width) { stageCurrent() }
                         else if value.translation.width < -100 { next() }
                         else if value.translation.width > 100 { previous() }
                         withAnimation { offset = .zero }
@@ -505,7 +506,11 @@ struct ReviewView: View {
                             .buttonStyle(.bordered)
                     }
                     Button("下一张") { next() }.buttonStyle(.bordered)
-                    Button("放入待删", role: .destructive) { stageCurrent() }.buttonStyle(.bordered)
+                    if store.state.pending.contains(current) {
+                        Button("恢复") { store.restore(current) }.buttonStyle(.bordered)
+                    } else {
+                        Button("放入待删", role: .destructive) { stageCurrent() }.buttonStyle(.bordered)
+                    }
                 }
                 NavigationLink("查看详情与分类") { DetailView(id: current) }
             } else {

@@ -3,6 +3,22 @@ import CoreLocation
 
 enum PhotoTag: String, Codable, CaseIterable, Identifiable {
     case portrait = "人像", scenery = "风景", screenshot = "截图", food = "美食"
+    case cityScenery = "城市风光", naturalScenery = "自然风光", documents = "票据"
+    // Keep legacy raw values decodable. Present their normalized categories.
+    static let allCases: [PhotoTag] = [.portrait,.cityScenery,.naturalScenery,.screenshot,.food,.chat,.videoCall,.shopping,.documents,.meme,.video,.other]
+    static func normalized(_ tags: Set<PhotoTag>, labels: [String]) -> Set<PhotoTag> {
+        var result: Set<PhotoTag> = []
+        for tag in tags {
+            switch tag {
+            case .receipt,.invoice,.payment,.ticket: result.insert(.documents)
+            case .scenery:
+                let scenery = CategoryRules.sceneryTags(labels)
+                result.formUnion(scenery.isEmpty ? [.other] : scenery)
+            default: result.insert(tag)
+            }
+        }
+        return result
+    }
     case chat = "聊天记录", videoCall = "视频通话", shopping = "商品购物"
     case receipt = "收据", invoice = "发票", payment = "支付记录"
     case ticket = "票券", meme = "表情与梗图", video = "视频", other = "待确认"
@@ -11,7 +27,9 @@ enum PhotoTag: String, Codable, CaseIterable, Identifiable {
         switch self {
         case .food: return "fork.knife"
         case .portrait: return "person.crop.rectangle"
-        case .scenery: return "mountain.2"
+        case .cityScenery: return "building.2"
+        case .naturalScenery, .scenery: return "mountain.2"
+        case .documents: return "doc.text"
         case .screenshot: return "viewfinder"
         case .chat: return "bubble.left.and.bubble.right"
         case .videoCall: return "video"
@@ -27,7 +45,7 @@ enum PhotoTag: String, Codable, CaseIterable, Identifiable {
     }
 }
 
-struct MediaRecord: Codable, Identifiable {
+struct MediaRecord: Codable, Identifiable, Equatable {
     var id: String
     var date: Date
     var modified: Date?
@@ -51,7 +69,11 @@ struct MediaRecord: Codable, Identifiable {
     var videoTitle: String?
     var visualLabels: [String]?
     var effectiveTags: Set<PhotoTag> {
-        let result = tags.union(addedTags).subtracting(removedTags)
+        let labels = visualLabels ?? []
+        var result = PhotoTag.normalized(tags,labels:labels)
+            .union(PhotoTag.normalized(addedTags,labels:labels))
+            .subtracting(PhotoTag.normalized(removedTags,labels:labels))
+        if !result.subtracting([.other,.screenshot,.video]).isEmpty { result.remove(.other) }
         return result.isEmpty ? [.other] : result
     }
     var customTags: [String] { TagNames.normalized(keywords ?? []) }
@@ -112,6 +134,15 @@ struct LibraryState: Codable {
 }
 
 enum CategoryRules {
+    static func sceneryTags(_ labels: [String]) -> Set<PhotoTag> {
+        let visual = labels.joined(separator:" ").lowercased().replacingOccurrences(of:"_",with:" ")
+        let city = ["cityscape","city","urban","skyscraper","architecture","street","skyline","building"].contains(where:visual.contains)
+        let nature = ["mountain","beach","forest","lake","river","waterfall","desert","countryside","grassland","volcano","ocean","coast","sunset"].contains(where:visual.contains)
+        var result: Set<PhotoTag> = []
+        if city { result.insert(.cityScenery) }
+        if nature || (!city && visual.contains("landscape")) { result.insert(.naturalScenery) }
+        return result
+    }
     static func classify(text: String, screenshot: Bool, faces: Int,
                          labels: [String], isVideo: Bool) -> (Set<PhotoTag>, [String]) {
         let t = text.lowercased().replacingOccurrences(of: " ", with: "")
@@ -123,19 +154,19 @@ enum CategoryRules {
         if isVideo { add(.video, "系统视频类型；文字识别只覆盖封面") }
         if faces > 0 { add(.portrait, "检测到人脸，尚未识别人物身份") }
         if match(["增值税", "发票号码", "发票代码", "电子发票", "invoice"]) {
-            add(.invoice, "识别到发票文字")
+            add(.documents, "识别到发票文字")
         }
         if match(["收据", "收款收据", "小票", "receipt", "合计金额", "找零"]) {
-            add(.receipt, "识别到收据或结算文字")
+            add(.documents, "识别到收据或结算文字")
         }
         if match(["支付成功", "付款成功", "转账成功", "交易单号", "收款成功", "微信支付", "支付宝转账"]) {
-            add(.payment, "识别到付款或转账文字")
+            add(.documents, "识别到付款或转账文字")
         }
         if match(["加入购物车", "立即购买", "商品详情", "领券", "已售", "加入购物袋", "buy now", "addtocart"]) {
             add(.shopping, "识别到购物界面文字")
         }
         if match(["检票", "座位号", "影厅", "取票码", "登机牌", "车次", "电子客票", "入场券", "boardingpass"]) {
-            add(.ticket, "识别到票券文字")
+            add(.documents, "识别到票券文字")
         }
         if screenshot && match(["按住说话", "发送", "撤回了一条消息", "聊天记录", "对方正在输入", "send", "微信号"]) {
             add(.chat, "截图中有聊天界面线索")
@@ -147,9 +178,7 @@ enum CategoryRules {
         if ["food", "bread", "meal", "cuisine", "breakfast", "dessert", "pizza", "cake", "fruit", "vegetable", "dish", "noodle"].contains(where: visual.contains) {
             add(.food, "本地图像分类命中食品线索")
         }
-        if ["landscape", "mountain", "beach", "forest", "sunset", "scenery"].contains(where: visual.contains) {
-            add(.scenery, "本地图像分类命中风景线索")
-        }
+        for tag in sceneryTags(labels) { add(tag, "本地图像分类命中风光线索") }
         if ["meme", "cartoon", "comic", "illustration"].contains(where: visual.contains)
             || match(["表情包", "笑死", "哈哈哈哈", "打工人", "我太难了"]) {
             add(.meme, "插画或梗文字线索，可能包含普通插画")

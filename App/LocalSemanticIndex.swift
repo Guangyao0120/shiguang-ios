@@ -66,7 +66,7 @@ actor LocalSemanticIndex {
         var db: OpaquePointer?
         guard sqlite3_open(databaseURL.path, &db) == SQLITE_OK, let db else { throw SemanticError.database }
         sqlite3_busy_timeout(db, 1000)
-        guard sqlite3_exec(db, "PRAGMA journal_mode=DELETE; CREATE TABLE IF NOT EXISTS embeddings (id TEXT PRIMARY KEY, stamp TEXT NOT NULL, model TEXT NOT NULL, vector BLOB NOT NULL);", nil, nil, nil) == SQLITE_OK else {
+        guard sqlite3_exec(db, "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; CREATE TABLE IF NOT EXISTS embeddings (id TEXT PRIMARY KEY, stamp TEXT NOT NULL, model TEXT NOT NULL, vector BLOB NOT NULL);", nil, nil, nil) == SQLITE_OK else {
             sqlite3_close(db); throw SemanticError.database
         }
         try? FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: databaseURL.path)

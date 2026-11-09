@@ -131,11 +131,10 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
 
     func save(immediately: Bool = false) {
         guard loaded && storageReadable else { return }
-        // While scanning, coalesce all five-record commits into one latest snapshot
-        // every five seconds instead of repeatedly encoding the entire library.
-        if scanning && !immediately && pendingSaveID != nil { return }
+        // Coalesce progress commits; LibraryDisk persists only changed rows.
+        if (scanning || busy) && !immediately && pendingSaveID != nil { return }
         saveTask?.cancel()
-        let ticket = UUID(), delay: UInt64 = scanning ? 5_000_000_000 : 800_000_000
+        let ticket = UUID(), delay: UInt64 = (scanning || busy) ? 5_000_000_000 : 800_000_000
         pendingSaveID = ticket
         saveTask = Task { [weak self] in
             if !immediately {
@@ -208,7 +207,15 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
             let started = Date()
             var lastFeedback = Date.distantPast
             var completedAll = false
+            var measurements = ScanMeasurements()
+            var lastMetricsSave = Date()
+            let images = ScanImagePrefetcher(records:todo)
             defer {
+                images.cancel()
+                measurements.elapsed = Date().timeIntervalSince(started); measurements.timestamp = Date()
+                measurements.phase = completedAll && !Task.isCancelled ? "finished" : "paused"
+                let finalMeasurements = measurements
+                Task { try? await self.disk.saveScanMeasurements(finalMeasurements) }
                 self.commitAnalysis(updates); self.scanning = false; self.save(immediately: true)
                 let finished = completedAll && !Task.isCancelled, count = handled, saving = self.saveTask
                 Task { await saving?.value; onFinish?(finished, count) }
@@ -216,12 +223,18 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
             for (position, record) in todo.enumerated() {
                 if Task.isCancelled { return }
                 var updated = record
-                let image = await PhotoAccess.image(id: record.id, size: CGSize(width: record.isScreenshot ? 1024 : 640, height: record.isScreenshot ? 1024 : 640), highQuality: true)
+                let waiting = Date()
+                let image = await images.next()
+                measurements.photoWaitSeconds += Date().timeIntervalSince(waiting)
                 guard !Task.isCancelled else { return }
                 if let image {
                     do {
+                        let analyzing = Date()
                         let result = try await LocalAnalyzer.analyze(image, screenshot: record.isScreenshot, video: false, cpuOnly: UIApplication.shared.applicationState != .active)
                         guard !Task.isCancelled else { return }
+                        measurements.visionSeconds += Date().timeIntervalSince(analyzing)
+                        measurements.recognized += 1
+                        if record.isScreenshot { measurements.screenshots += 1 }
                         updated.tags = result.tags; updated.text = String(result.text.prefix(4000))
                         updated.reasons = result.reasons; updated.hash = result.hash; updated.visualLabels = result.labels
                         updated.analyzed = true; updated.unavailable = false
@@ -232,13 +245,20 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
                 }
                 updates.append(updated)
                 handled += 1
+                measurements.handled = handled
+                measurements.elapsed = Date().timeIntervalSince(started)
+                if Date().timeIntervalSince(lastMetricsSave) >= 10 {
+                    measurements.timestamp = Date(); let snapshot = measurements
+                    Task { try? await self.disk.saveScanMeasurements(snapshot) }
+                    lastMetricsSave = Date()
+                }
                 if updates.count >= 24 || Date().timeIntervalSince(lastCommit) >= 2 {
                     self.commitAnalysis(updates); updates.removeAll(keepingCapacity: true); self.save(); lastCommit = Date()
                 }
                 ScanRuntime.shared.updateProgress(done: position + 1, total: todo.count)
                 if Date().timeIntervalSince(lastFeedback) >= 0.5 || position + 1 == todo.count {
                     self.progress = Double(position + 1) / Double(todo.count)
-                    self.scanRate = Double(handled) / max(0.001,Date().timeIntervalSince(started))
+                    self.scanRate = Double(measurements.recognized) / max(0.001,Date().timeIntervalSince(started))
                     self.status = "正在整理 · \(position + 1)/\(todo.count)"
                     lastFeedback = Date()
                 }

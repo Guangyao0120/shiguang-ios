@@ -5,6 +5,150 @@ import UIKit
 
 final class RulesTests: XCTestCase {
 
+    func testLegacyBillsShareOneCategoryAndManualRemovalStillWorks() throws {
+        var record = media("bill")
+        record.tags = [.receipt,.invoice,.payment,.ticket]
+        let oldData = try JSONEncoder().encode(record)
+        let loaded = try JSONDecoder().decode(MediaRecord.self,from:oldData)
+        XCTAssertEqual(loaded.effectiveTags,[.documents])
+        XCTAssertFalse(PhotoTag.allCases.contains(.receipt))
+        XCTAssertFalse(PhotoTag.allCases.contains(.invoice))
+        XCTAssertFalse(PhotoTag.allCases.contains(.payment))
+        XCTAssertFalse(PhotoTag.allCases.contains(.ticket))
+        record.removedTags = [.documents]
+        XCTAssertEqual(record.effectiveTags,[.other])
+        record.removedTags = []; record.addedTags = [.portrait]
+        XCTAssertEqual(record.effectiveTags,[.documents,.portrait])
+    }
+    func testCityAndNatureSplitUsesEvidenceAndPreservesUncertainLegacyPhotos() {
+        XCTAssertEqual(CategoryRules.sceneryTags(["urban","building"]),[.cityScenery])
+        XCTAssertEqual(CategoryRules.sceneryTags(["forest","mountain"]),[.naturalScenery])
+        XCTAssertEqual(CategoryRules.sceneryTags(["cityscape","river"]),[.cityScenery,.naturalScenery])
+        var old = media("old"); old.tags = [.scenery]
+        XCTAssertEqual(old.effectiveTags,[.other])
+        old.visualLabels = ["cityscape"]
+        XCTAssertEqual(old.effectiveTags,[.cityScenery])
+        old.visualLabels = ["mountain"]
+        XCTAssertEqual(old.effectiveTags,[.naturalScenery])
+        XCTAssertEqual(old.tags,[.scenery]) // Preserve the original stored classification.
+    }
+    func testReviewSnapshotsStayStableForAllPhotosPortraitPeopleAndTrips() {
+        var state = LibraryState()
+        let person = NamedPerson(name:"Test person")
+        state.people = [person]
+        for (i,id) in ["a","b","c"].enumerated() {
+            var value = media(id,Double(3-i)); value.tags = [.portrait]; value.people = [person.id]
+            state.records[id] = value
+        }
+        let trip = Trip(name:"Test trip",members:["a","b","c"]); state.trips = [trip]
+        let before = LibraryIndex.build(state:state,visible:Set(state.records.keys))
+        let sessions = [before.active,before.byTag[.portrait]!,before.byPerson[person.id]!,before.byTrip[trip.id]!].map { ReviewSession(ids:$0.map(\.id)) }
+        state.stage("a")
+        let after = LibraryIndex.build(state:state,visible:Set(state.records.keys))
+        XCTAssertEqual(after.byTag[.portrait]?.map(\.id),["b","c"])
+        for session in sessions {
+            XCTAssertEqual(session.ids,["a","b","c"])
+            let next = ReviewNavigation.next(from:0,ids:session.ids,existing:Set(state.records.keys),pending:state.pending)
+            XCTAssertEqual(session.ids[next],"b")
+            let previous = ReviewNavigation.previous(from:next,ids:session.ids,existing:Set(state.records.keys))
+            XCTAssertEqual(session.ids[previous],"a")
+        }
+        XCTAssertEqual(ReviewSession(ids:["a","a","b"]).ids,["a","b"])
+    }
+    func testDiskMigratesLegacyJSONWithoutOverwritingItsBackup() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
+        defer { try? FileManager.default.removeItem(at:folder) }
+        let url = folder.appendingPathComponent("library-v1.json")
+        var old = LibraryState(); var record = media("a"); record.tags = [.payment]; record.analyzed = true; record.text = "Saved OCR"
+        old.records[record.id] = record; old.pending = ["a"]; old.lastStaged = "a"; old.customTagNames = ["Saved tag"]
+        let backup = try JSONEncoder().encode(old); try backup.write(to:url)
+        let disk = LibraryDisk(url:url)
+        var loaded = try await disk.load()
+        XCTAssertEqual(loaded.records["a"],record)
+        XCTAssertEqual(loaded.pending,["a"])
+        loaded.records["b"] = media("b")
+        try await disk.write(loaded,revision:1)
+        let reopened = try await LibraryDisk(url:url).load()
+        XCTAssertEqual(reopened.records.count,2)
+        XCTAssertEqual(reopened.records["a"]?.text,"Saved OCR")
+        XCTAssertEqual(reopened.customTagNames,["Saved tag"])
+        XCTAssertEqual(try Data(contentsOf:url),backup)
+    }
+    func testProgressSaveEncodesOnlyChangedRecordsAndSkipsIdenticalSnapshot() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:folder) }
+        let disk = LibraryDisk(url:folder.appendingPathComponent("state.json"))
+        var state = LibraryState()
+        for i in 0..<1000 { var record = media("\(i)"); record.text = String(repeating:"x",count:4096); state.records[record.id] = record }
+        try await disk.write(state,revision:1)
+        let first = await disk.writeMetrics
+        XCTAssertEqual(first.recordsWritten,1000)
+        state.records["5"]?.text = String(repeating:"y",count:4096)
+        try await disk.write(state,revision:2)
+        let changed = await disk.writeMetrics
+        XCTAssertEqual(changed.recordsWritten,1)
+        XCTAssertLessThan(changed.encodedBytes,first.encodedBytes/100)
+        try await disk.write(state,revision:3)
+        let unchanged = await disk.writeMetrics
+        XCTAssertEqual(unchanged.recordsWritten,0)
+        XCTAssertEqual(unchanged.encodedBytes,0)
+        XCTAssertEqual(unchanged.transactions,changed.transactions)
+    }
+    func testFailedRecordEncodingRollsBackWholeProgressTransaction() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at:folder) }
+        let url = folder.appendingPathComponent("state.json"), disk = LibraryDisk(url:url)
+        var original = LibraryState(); original.records["a"] = media("a"); original.records["b"] = media("b")
+        try await disk.write(original,revision:1)
+        var bad = original; bad.records["a"]?.text = "Must not partially save"
+        bad.records["b"]?.date = Date(timeIntervalSinceReferenceDate:.infinity)
+        do { try await disk.write(bad,revision:2); XCTFail("Expected encoding failure") } catch { }
+        let restored = try await LibraryDisk(url:url).load()
+        XCTAssertEqual(restored.records,original.records)
+    }
+    @MainActor
+    func testPhotoReaderPrefetchesOneAheadAndCancellationDoesNotStartAnother() async {
+        var starts: [String] = [], cancelled: [String] = []
+        var waiting: [String:CheckedContinuation<UIImage?,Never>] = [:]
+        let reader = ScanImagePrefetcher(records:[media("a"),media("b"),media("c")]) { record in
+            starts.append(record.id)
+            let result = await withCheckedContinuation { waiting[record.id] = $0 }
+            if Task.isCancelled { cancelled.append(record.id) }
+            return result
+        }
+        for _ in 0..<30 { if waiting["a"] != nil { break }; await Task.yield() }
+        XCTAssertEqual(starts,["a"])
+        waiting.removeValue(forKey:"a")?.resume(returning:UIImage())
+        let first = await reader.next()
+        XCTAssertNotNil(first)
+        for _ in 0..<30 { if waiting["b"] != nil { break }; await Task.yield() }
+        XCTAssertEqual(starts,["a","b"])
+        reader.cancel()
+        waiting.removeValue(forKey:"b")?.resume(returning:nil)
+        for _ in 0..<30 { if cancelled.contains("b") { break }; await Task.yield() }
+        let afterCancel = await reader.next()
+        XCTAssertNil(afterCancel)
+        XCTAssertEqual(starts,["a","b"])
+        XCTAssertEqual(cancelled,["b"])
+    }
+    @MainActor
+    func testReusedVisionRequestsDoNotLeakPreviousScreenshotText() async throws {
+        let size = CGSize(width:1024,height:640)
+        let invoice = UIGraphicsImageRenderer(size:size).image { context in
+            UIColor.white.setFill(); context.fill(CGRect(origin:.zero,size:size))
+            ("INVOICE 123" as NSString).draw(at:CGPoint(x:40,y:100),withAttributes:[.font:UIFont.systemFont(ofSize:64),.foregroundColor:UIColor.black])
+        }
+        let blank = UIGraphicsImageRenderer(size:size).image { context in UIColor.white.setFill(); context.fill(CGRect(origin:.zero,size:size)) }
+        let first = try await LocalAnalyzer.analyze(invoice,screenshot:true,video:false,cpuOnly:true)
+        XCTAssertTrue(first.text.uppercased().contains("INVOICE"))
+        XCTAssertTrue(first.tags.contains(.documents))
+        let second = try await LocalAnalyzer.analyze(blank,screenshot:true,video:false,cpuOnly:true)
+        XCTAssertTrue(second.text.isEmpty)
+        XCTAssertFalse(second.tags.contains(.documents))
+    }
+
+
     func testReviewMovesInBothDirectionsAndCanRevisitStagedImages() {
         let ids = ["a", "b", "gone", "c"]
         let existing: Set<String> = ["a", "b", "c"]
@@ -274,7 +418,7 @@ final class RulesTests: XCTestCase {
     func testScreenshotCanBeChatAndPaymentAndPortrait() {
         let result = CategoryRules.classify(text: "微信支付 支付成功 发送", screenshot: true,
             faces: 1, labels: [], isVideo: false).0
-        XCTAssertTrue(result.isSuperset(of: [.screenshot, .payment, .chat, .portrait]))
+        XCTAssertTrue(result.isSuperset(of: [.screenshot, .documents, .chat, .portrait]))
         XCTAssertFalse(result.contains(.other))
     }
     func testUnknownStaysReviewable() {
@@ -292,7 +436,7 @@ final class RulesTests: XCTestCase {
         record.removedTags = [.meme]
         record.addedTags = [.ticket]
         let decoded = try JSONDecoder().decode(MediaRecord.self, from: JSONEncoder().encode(record))
-        XCTAssertEqual(decoded.effectiveTags, [.portrait, .ticket])
+        XCTAssertEqual(decoded.effectiveTags, [.portrait, .documents])
     }
     func testStagingUndoAndDeleteDoNotLeaveDanglingReferences() throws {
         var state = LibraryState()
