@@ -510,6 +510,7 @@ final class RulesTests: XCTestCase {
         initial.pending = ["a","b","c"]; store.seedForTesting(initial)
         await store.deletePending(selected:["a","b","unknown"])
         XCTAssertEqual(submitted,["a","b"])
+        XCTAssertNil(store.message,"Normal cancellation must not require another confirmation")
         XCTAssertEqual(store.state.pending,["a","b","c"])
         XCTAssertEqual(store.state.records.count,3)
         cancel = false

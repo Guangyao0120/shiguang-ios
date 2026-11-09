@@ -521,6 +521,11 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
             similar.removeAll { !$0.allSatisfy { state.records[$0] != nil } }
             save(immediately:true); _ = await flushPendingSaves(); metadataDirty = true
             message = actual.count == ids.count ? "已删除所选照片，可在苹果照片的最近删除中恢复。" : "已删除可删除的照片，其余仍保留在待删区。"
-        } catch { message = "没有完成删除，所选照片仍保留在待删区：\(error.localizedDescription)" }
+        } catch {
+            if error is CancellationError || (error as? PHPhotosError)?.code == .userCancelled || (error as? CocoaError)?.code == .userCancelled {
+                status = "已取消删除，所选照片保留"; return
+            }
+            message = "没有完成删除，所选照片仍保留在待删区：\(error.localizedDescription)"
+        }
     }
 }

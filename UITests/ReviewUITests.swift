@@ -93,7 +93,7 @@ final class ReviewUITests: XCTestCase {
         XCTAssertTrue(alert.waitForExistence(timeout:9),"Expected actual PhotoKit deletion confirmation")
         let cancel = alert.buttons.matching(NSPredicate(format:"label IN %@",["Don’t Allow","Don't Allow","不允许","Cancel","取消"])).firstMatch
         XCTAssertTrue(cancel.exists); cancel.tap()
-        if app.alerts.firstMatch.waitForExistence(timeout:5) { app.alerts.firstMatch.buttons.element(boundBy:0).tap() }
+        XCTAssertFalse(app.alerts.firstMatch.waitForExistence(timeout:3),"Cancelling deletion must return directly to selection")
         XCTAssertTrue(choices.firstMatch.waitForExistence(timeout:10))
         XCTAssertEqual(app.buttons["pending.delete"].label,"删除所选 1 项")
         app.buttons["恢复所选 1 项"].tap()
