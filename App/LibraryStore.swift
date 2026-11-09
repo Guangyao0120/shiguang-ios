@@ -354,10 +354,11 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
         if state.lastStaged == id { state.lastStaged = nil }
         save()
     }
-    func restoreAllPending() {
+    func restoreAllPending(ids: Set<String>? = nil) {
+        let restoring = (ids ?? visibleIDs).intersection(visibleIDs)
         var next = state
-        next.pending.subtract(visibleIDs)
-        next.lastStaged = nil
+        next.pending.subtract(restoring)
+        if let last = next.lastStaged, restoring.contains(last) { next.lastStaged = nil }
         state = next; save()
     }
     func undo() { state.undo(); save() }

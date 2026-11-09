@@ -601,7 +601,7 @@ struct PendingView: View {
                 MediaGrid(records:store.visiblePending,selection:selecting ? $selection : nil)
                 if selecting {
                     Button("恢复所选 \(valid.count) 项") {
-                        for id in valid { store.restore(id) }
+                        store.restoreAllPending(ids:valid)
                         selection = []
                     }.buttonStyle(.bordered).disabled(valid.isEmpty || store.busy)
                     Button(role:.destructive) {

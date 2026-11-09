@@ -517,6 +517,9 @@ final class RulesTests: XCTestCase {
         XCTAssertNil(store.state.records["a"]); XCTAssertNotNil(store.state.records["b"])
         let reopened = try await LibraryDisk(url:folder.appendingPathComponent("state.json")).load()
         XCTAssertEqual(reopened.pending,["b","c"])
+        store.restoreAllPending(ids:["b"])
+        XCTAssertEqual(store.state.pending,["c"])
+        XCTAssertNotNil(store.state.records["b"])
     }
 
     @MainActor
