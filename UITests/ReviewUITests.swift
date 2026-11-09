@@ -13,6 +13,28 @@ final class ReviewUITests: XCTestCase {
     func testTripReviewUsesTheSameControlsAndGestures() { checkRoute(tab:"出游",entry:"collection.trip.",prefix:true) }
 
     @MainActor
+    func testPendingSelectionSurvivesTabChangesAndRestoreOnlyAffectsSelectedItems() {
+        let app = XCUIApplication()
+        app.launchEnvironment["SHIGUANG_DESIGN_PREVIEW"] = "1"
+        app.launchEnvironment["SHIGUANG_PREVIEW_LANGUAGE"] = "zh-Hans"
+        app.launch()
+        app.tabBars.buttons["待删"].tap()
+        let choose = app.buttons["pending.selection"]
+        XCTAssertTrue(choose.waitForExistence(timeout:10)); choose.tap()
+        let selections = app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","pending.select."))
+        XCTAssertGreaterThan(selections.count,1)
+        let before = selections.count
+        selections.element(boundBy:0).tap()
+        XCTAssertEqual(app.buttons["pending.delete"].label,"删除所选 1 项")
+        app.tabBars.buttons["整理"].tap(); app.tabBars.buttons["待删"].tap()
+        XCTAssertEqual(app.buttons["pending.delete"].label,"删除所选 1 项")
+        app.buttons["恢复所选 1 项"].tap()
+        XCTAssertEqual(selections.count,before-1)
+        XCTAssertFalse(app.buttons["pending.delete"].isEnabled)
+        app.terminate()
+    }
+
+    @MainActor
     private func checkRoute(tab: String, entry: String, prefix: Bool) {
         let app = XCUIApplication()
         app.launchEnvironment["SHIGUANG_DESIGN_PREVIEW"] = "1"

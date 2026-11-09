@@ -13,22 +13,57 @@ struct AnalysisResult {
 
 enum LocalAnalyzer {
     private static let queue = DispatchQueue(label: "shiguang.vision", qos: .utility)
-    // Only accessed on queue. Reuse requests and their model configuration.
-    private static let faces = VNDetectFaceRectanglesRequest()
-    private static let classification = VNClassifyImageRequest()
-    private static let textRequest: VNRecognizeTextRequest = {
-        let request = VNRecognizeTextRequest()
-        request.recognitionLevel = .accurate
-        request.recognitionLanguages = ["zh-Hans", "en-US"]
-        request.usesLanguageCorrection = false
-        return request
-    }()
-
+    private final class Job<T>: @unchecked Sendable {
+        private let lock = NSLock()
+        private var continuation: CheckedContinuation<T,Error>?
+        private var requests: [VNRequest] = []
+        private var ended = false
+        func begin(_ value: CheckedContinuation<T,Error>) -> Bool {
+            lock.lock(); defer { lock.unlock() }
+            if ended { value.resume(throwing:CancellationError()); return false }
+            continuation = value; return true
+        }
+        func attach(_ values: [VNRequest]) -> Bool {
+            lock.lock(); defer { lock.unlock() }
+            guard !ended else { return false }; requests = values; return true
+        }
+        func finish(_ result: Result<T,Error>,cancel: Bool = false) {
+            lock.lock()
+            guard !ended else { lock.unlock(); return }
+            ended = true
+            let value = continuation, active = requests
+            continuation = nil; requests = []; lock.unlock()
+            if cancel { active.forEach { $0.cancel() } }
+            value?.resume(with:result)
+        }
+    }
+    private static func perform<T>(_ body: @escaping (Job<T>) throws -> T) async throws -> T {
+        let job = Job<T>()
+        return try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            return try await withCheckedThrowingContinuation { continuation in
+                guard job.begin(continuation) else { return }
+                let timeout = DispatchWorkItem { job.finish(.failure(AnalyzerError.timeout),cancel:true) }
+                DispatchQueue.global(qos:.utility).asyncAfter(deadline:.now()+45,execute:timeout)
+                queue.async {
+                    defer { timeout.cancel() }
+                    autoreleasepool {
+                        do { job.finish(.success(try body(job))) }
+                        catch { job.finish(.failure(error)) }
+                    }
+                }
+            }
+        } onCancel: { job.finish(.failure(CancellationError()),cancel:true) }
+    }
     static func analyze(_ image: UIImage, screenshot: Bool, video: Bool, cpuOnly: Bool = false) async throws -> AnalysisResult {
-        try await withCheckedThrowingContinuation { continuation in
-            queue.async {
-                autoreleasepool {
-                    do {
+        try await perform { job in
+                        let faces = VNDetectFaceRectanglesRequest()
+                        let classification = VNClassifyImageRequest()
+                        let textRequest = VNRecognizeTextRequest()
+                        textRequest.recognitionLevel = .accurate
+                        textRequest.recognitionLanguages = ["zh-Hans","en-US"]
+                        textRequest.usesLanguageCorrection = false
+                        guard job.attach([faces,classification,textRequest]) else { throw CancellationError() }
                         guard let cg = image.cgImage else { throw AnalyzerError.invalidImage }
                         faces.usesCPUOnly = cpuOnly; classification.usesCPUOnly = cpuOnly; textRequest.usesCPUOnly = cpuOnly
                         let handler = VNImageRequestHandler(cgImage:cg,orientation:image.visionOrientation,options:[:])
@@ -45,26 +80,19 @@ enum LocalAnalyzer {
                         }
                         let (tags, reasons) = CategoryRules.classify(text: text, screenshot: screenshot,
                             faces: faces.results?.count ?? 0, labels: labels, isVideo: video)
-                        continuation.resume(returning: AnalysisResult(tags: tags, text: text,
-                            reasons: reasons, hash: video ? nil : differenceHash(cg), labels: Array(labels)))
-                    } catch { continuation.resume(throwing: error) }
-                }
-            }
+                        return AnalysisResult(tags: tags, text: text,
+                            reasons: reasons, hash: video ? nil : differenceHash(cg), labels: Array(labels))
         }
     }
 
     static func sceneryLabels(_ image: UIImage, cpuOnly: Bool) async throws -> [String] {
-        try await withCheckedThrowingContinuation { continuation in
-            queue.async {
-                autoreleasepool {
-                    do {
-                        guard let cg = image.cgImage else { throw AnalyzerError.invalidImage }
-                        classification.usesCPUOnly = cpuOnly
-                        try VNImageRequestHandler(cgImage:cg,orientation:image.visionOrientation,options:[:]).perform([classification])
-                        continuation.resume(returning:Array((classification.results ?? []).filter { $0.confidence >= 0.2 }.prefix(12).map(\.identifier)))
-                    } catch { continuation.resume(throwing:error) }
-                }
-            }
+        try await perform { job in
+            let classification = VNClassifyImageRequest()
+            guard job.attach([classification]) else { throw CancellationError() }
+            guard let cg = image.cgImage else { throw AnalyzerError.invalidImage }
+            classification.usesCPUOnly = cpuOnly
+            try VNImageRequestHandler(cgImage:cg,orientation:image.visionOrientation,options:[:]).perform([classification])
+            return Array((classification.results ?? []).filter { $0.confidence >= 0.2 }.prefix(12).map(\.identifier))
         }
     }
 
@@ -90,7 +118,7 @@ enum LocalAnalyzer {
             return bits >= 4 && bits <= 60 ? hash : nil
         }
     }
-    enum AnalyzerError: Error { case invalidImage }
+    enum AnalyzerError: Error { case invalidImage, timeout }
 }
 
 extension UIImage {

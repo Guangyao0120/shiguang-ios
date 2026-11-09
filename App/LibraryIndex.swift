@@ -108,7 +108,7 @@ enum LibraryMetadata {
             if record.isVideo { record.tags.insert(.video) }
             next.records[value.id] = record
         }
-        if fullAccess { next.forget(Set(next.records.keys).subtracting(visible)) }
+        // Missing IDs stay cached; visibility filtering hides them. Only confirmed deletion removes saved analysis.
         return next
     }
 }

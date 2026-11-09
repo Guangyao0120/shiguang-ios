@@ -15,7 +15,13 @@ struct RootView: View {
             if !onboardingComplete && (store.authorization == .notDetermined || UserDefaults.standard.bool(forKey: "onboardingInProgress")) && !DesignPreview.enabled {
                 WelcomeView()
             } else if store.permitted {
-                if !store.loaded {
+                if let error = store.loadError {
+                    VStack(spacing:20) {
+                        Text("整理记录暂时无法读取").font(.headline)
+                        Text(error).font(.footnote).foregroundStyle(Palette.secondary)
+                        Button("重试读取") { Task { await store.start() } }
+                    }.padding()
+                } else if !store.loaded {
                     VStack(spacing: 18) {
                         ProgressView()
                         Text("正在读取上次的整理结果").font(.headline)
@@ -65,7 +71,7 @@ struct RootView: View {
         .task { if store.authorization == .notDetermined { UserDefaults.standard.set(true,forKey:"onboardingInProgress") }; await store.start() }
 
         .onChange(of: phase) { _, newValue in
-            if newValue == .active { ScanRuntime.shared.enterForeground(); store.refreshIfNeeded() }
+            if newValue == .active { ScanRuntime.shared.enterForeground(); if !store.loaded { Task { await store.start() } } else { store.refreshIfNeeded() } }
             if newValue == .background { ScanRuntime.shared.enterBackground(); SemanticSearchController.shared.background(); store.save(immediately: true); PhotoAccess.clearCache() }
         }
         .alert("拾光", isPresented: Binding(get: { store.message != nil }, set: { if !$0 { store.message = nil } })) {
@@ -96,6 +102,14 @@ struct HomeView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 26) {
+                if store.saveError != nil {
+                    HStack {
+                        Text("整理记录尚未保存").font(.subheadline)
+                        Spacer()
+                        Button("重试保存") { Task { await store.retrySave() } }
+                    }.padding().paperCard()
+                }
+
                 HStack {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("留住喜欢的").font(.system(size: 30, weight: .medium, design: .serif))
@@ -270,6 +284,7 @@ struct CollectionView: View {
 struct MediaGrid: View {
     @EnvironmentObject var store: LibraryStore
     var records: [MediaRecord]
+    var selection: Binding<Set<String>>? = nil
     @State private var displayLimit = 120
     var body: some View {
         if records.isEmpty {
@@ -296,6 +311,24 @@ struct MediaGrid: View {
 
                         }
                     }.buttonStyle(.plain)
+                    .disabled(selection != nil)
+                    .overlay {
+                        if let selection {
+                            Button {
+                                if selection.wrappedValue.contains(record.id) { selection.wrappedValue.remove(record.id) }
+                                else { selection.wrappedValue.insert(record.id) }
+                            } label: {
+                                Rectangle().fill(.clear).contentShape(Rectangle())
+                                    .overlay(alignment:.topTrailing) {
+                                        Image(systemName:selection.wrappedValue.contains(record.id) ? "checkmark.circle.fill" : "circle")
+                                            .font(.title2).foregroundStyle(.white,Palette.accent)
+                                            .shadow(radius:2).padding(8)
+                                    }
+                            }.buttonStyle(.plain)
+                            .accessibilityLabel(selection.wrappedValue.contains(record.id) ? "取消选择" : "选择照片")
+                            .accessibilityIdentifier("pending.select." + record.id)
+                        }
+                    }
                 }
             }
             if records.count > displayLimit {
@@ -483,9 +516,8 @@ struct ReviewView: View {
     let ids: [String]
     @State private var index = 0
     @State private var offset: CGSize = .zero
-    @State private var showingOriginal = false
-    @State private var originalID: String?
-    @State private var originalWasPending = false
+    @State private var preview: ReviewPreview?
+    @State private var closingPreview: ReviewPreview?
     @State private var hasAppeared = false
     private var current: String? { index < ids.count ? ids[index] : nil }
     var body: some View {
@@ -508,7 +540,7 @@ struct ReviewView: View {
                     })
                 Text("左滑下一张 · 右滑上一张 · 上滑待删").font(.footnote).foregroundStyle(Palette.secondary)
                 ReviewControls(pending:store.state.pending.contains(current),clear:{
-                    originalID = current; originalWasPending = store.state.pending.contains(current); showingOriginal = true
+                    let item = ReviewPreview(id:current,wasPending:store.state.pending.contains(current)); closingPreview = item; preview = item
                 },next:{ next() },stageOrRestore:{
                     if store.state.pending.contains(current) { store.restore(current) } else { stageCurrent() }
                 })
@@ -525,14 +557,12 @@ struct ReviewView: View {
         }.padding().coordinateSpace(name:"review.canvas").background(canvas).navigationTitle("连续整理").navigationBarTitleDisplayMode(.inline)
             .toolbar { Button("完成") { dismiss() }.accessibilityIdentifier("review.done") }
             .onAppear { if !hasAppeared { hasAppeared = true; skipPending() } }
-            .fullScreenCover(isPresented: $showingOriginal, onDismiss: {
-                if ReviewNavigation.advanceAfterPreview(id:originalID,current:current,wasPending:originalWasPending,pending:store.state.pending) { next() }
-                originalID = nil
-            }) {
-                if let originalID {
-                    if store.state.records[originalID]?.isVideo == true { ReviewVideoPreview(id:originalID) }
-                    else { OriginalPhotoView(id: originalID) }
-                }
+            .fullScreenCover(item:$preview,onDismiss:{
+                if let item = closingPreview, ReviewNavigation.advanceAfterPreview(id:item.id,current:current,wasPending:item.wasPending,pending:store.state.pending) { next() }
+                closingPreview = nil
+            }) { item in
+                if store.state.records[item.id]?.isVideo == true { ReviewVideoPreview(id:item.id) }
+                else { OriginalPhotoView(id:item.id) }
             }
     }
     private func stageCurrent() {
@@ -548,26 +578,43 @@ struct ReviewView: View {
 
 struct PendingView: View {
     @EnvironmentObject var store: LibraryStore
+    @State private var selecting = false
+    @State private var selection: Set<String> = []
+    private var valid: Set<String> { PendingSelection.valid(selection,pending:store.state.pending,visible:store.visibleIDs) }
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                Text("再想一想，也没关系").font(.title2.bold())
+            VStack(alignment:.leading,spacing:20) {
                 Text("原图仍在相册，可随时恢复。")
                     .font(.subheadline).foregroundStyle(Palette.secondary)
-                MediaGrid(records: store.visiblePending)
                 if !store.visiblePending.isEmpty {
-                    Button("全部恢复") {
-                        store.restoreAllPending()
-                    }.buttonStyle(.bordered)
-                    Button(role: .destructive) { Task { await store.deletePending() } } label: {
-                        Text(store.busy ? "等待系统处理…" : "请求系统删除 \(store.visiblePending.count) 项")
-                            .frame(maxWidth: .infinity)
-                    }.buttonStyle(QuietPrimaryButtonStyle()).disabled(store.busy || store.scanning)
-                    Text("删除需系统确认，并同步 iCloud；可从「最近删除」恢复。")
-                        .font(.footnote).foregroundStyle(Palette.secondary)
+                    HStack {
+                        Button(selecting ? "完成选择" : "选择") { selecting.toggle() }
+                            .accessibilityIdentifier("pending.selection")
+                        Spacer()
+                        if selecting {
+                            Button(valid.count == store.visiblePending.count ? "取消全选" : "全选") {
+                                selection = valid.count == store.visiblePending.count ? [] : Set(store.visiblePending.map(\.id))
+                            }.accessibilityIdentifier("pending.selectAll")
+                        } else { Button("全部恢复") { store.restoreAllPending() } }
+                    }
+                }
+                MediaGrid(records:store.visiblePending,selection:selecting ? $selection : nil)
+                if selecting {
+                    Button("恢复所选 \(valid.count) 项") {
+                        for id in valid { store.restore(id) }
+                        selection = []
+                    }.buttonStyle(.bordered).disabled(valid.isEmpty || store.busy)
+                    Button(role:.destructive) {
+                        let ids = valid
+                        Task { await store.deletePending(selected:ids) }
+                    } label: {
+                        Text(store.busy ? "等待系统处理…" : "删除所选 \(valid.count) 项").frame(maxWidth:.infinity)
+                    }.buttonStyle(QuietPrimaryButtonStyle()).disabled(valid.isEmpty || store.busy)
+                    .accessibilityIdentifier("pending.delete")
                 }
             }.padding()
         }.background(canvas).navigationTitle("待删")
+        .onChange(of:store.indexVersion) { _,_ in selection = valid }
     }
 }
 

@@ -24,7 +24,10 @@ protocol ScanDriver: AnyObject {
     func pause()
     func save(immediately: Bool)
     func prepareForBackgroundScan() async
+    func flushPendingSaves() async -> Bool
 }
+
+extension ScanDriver { func flushPendingSaves() async -> Bool { true } }
 
 @MainActor
 final class ScanRuntime: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
@@ -36,6 +39,7 @@ final class ScanRuntime: NSObject, ObservableObject, UNUserNotificationCenterDel
     private let submitBackgroundOverride: (() throws -> Void)?
     private let notificationRequestOverride: (() async -> Void)?
     private var activeRun: UUID?
+    private var pausing = false
     private var continued: BGTask?
     private var lease = UIBackgroundTaskIdentifier.invalid
     private var registered = false
@@ -74,7 +78,7 @@ final class ScanRuntime: NSObject, ObservableObject, UNUserNotificationCenterDel
     }
     func start(screenshotsOnly: Bool? = nil, limit: Int? = nil) {
         guard let store else { note = "相册尚未准备好"; return }
-        guard !launching, !store.scanning else { return }
+        guard !pausing, !launching, !store.scanning else { return }
         guard store.loaded, !store.refreshing else { store.status = "正在读取相册，请稍后再试"; return }
         guard !store.busy else { store.status = "请等待当前操作完成"; return }
         guard store.permitted else { store.status = "请先允许照片访问"; return }
@@ -149,7 +153,7 @@ final class ScanRuntime: NSObject, ObservableObject, UNUserNotificationCenterDel
             self.continued?.setTaskCompleted(success: finished)
             self.continued = nil; self.endLease()
             BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: self.continuedID)
-            self.note = finished ? "本次整理完成" : "进度已保存"
+            self.note = finished ? "本次整理完成" : "整理已停止"
             if finished && count > 0 { Task { await self.notify(count: count, scope: scope) } }
             if !self.userPaused { self.schedule() }
         }
@@ -169,7 +173,13 @@ final class ScanRuntime: NSObject, ObservableObject, UNUserNotificationCenterDel
         userPaused = true
         BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: resumeID)
         if continued == nil { BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: continuedID) }
+        pausing = true
         store?.pause()
+        Task {
+            let saved = await store?.flushPendingSaves() ?? false
+            note = saved ? "已暂停，进度已保存" : "保存失败，请重试保存"
+            pausing = false
+        }
     }
     func enterBackground() {
         guard backgroundEnabled else { pause(); return }
@@ -182,8 +192,10 @@ final class ScanRuntime: NSObject, ObservableObject, UNUserNotificationCenterDel
     private func expired() {
         note = "系统结束了本次后台时段，已请求保存；等待下一次调度"
         store?.pause(); store?.save(immediately: true)
-        schedule()
-        endLease()
+        Task {
+            _ = await store?.flushPendingSaves()
+            schedule(); endLease()
+        }
     }
     private func endLease() {
         if lease != .invalid { UIApplication.shared.endBackgroundTask(lease); lease = .invalid }

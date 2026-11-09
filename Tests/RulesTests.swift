@@ -428,6 +428,73 @@ final class RulesTests: XCTestCase {
         XCTAssertEqual(loaded.records["a"]?.customTags, ["已修正"])
         try FileManager.default.removeItem(at: folder)
     }
+    @MainActor
+    func testPausePersistsCompletedItemsAndLateWorkerCannotEraseResumedRun() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let url = folder.appendingPathComponent("state.json")
+        let blocked = expectation(description:"second item reached")
+        let resumed = expectation(description:"resumed run finished")
+        let gate = ScanTestGate()
+        var calls = 0
+        let store = LibraryStore(storageURL:url,images:{ _ in UIImage() },analyze:{ _,_ in
+            calls += 1
+            if calls == 2 { blocked.fulfill(); await gate.wait() }
+            return AnalysisResult(tags:[.food],text:"saved",reasons:[],hash:nil,labels:["food"])
+        })
+        var initial = LibraryState()
+        initial.records = ["a":media("a"),"b":media("b",1),"c":media("c",2)]
+        store.seedForTesting(initial)
+        store.scan(screenshotsOnly:false,limit:100)
+        await fulfillment(of:[blocked],timeout:5)
+        store.pause()
+        XCTAssertFalse(store.scanning,"Pause must not await stalled Vision")
+        let saved = await store.flushPendingSaves(); XCTAssertTrue(saved)
+        let disk = LibraryDisk(url:url)
+        let paused = try await disk.load()
+        XCTAssertEqual(paused.records.values.filter(\.analyzed).count,1)
+        store.scan(screenshotsOnly:false,limit:100) { done,_ in XCTAssertTrue(done); resumed.fulfill() }
+        XCTAssertGreaterThan(store.progress,0,"Resume must display existing progress")
+        await fulfillment(of:[resumed],timeout:5)
+        gate.release()
+        for _ in 0..<5 { await Task.yield() }
+        let finalSave = await store.flushPendingSaves(); XCTAssertTrue(finalSave)
+        let reopened = try await LibraryDisk(url:url).load()
+        XCTAssertEqual(reopened.records.values.filter(\.analyzed).count,3)
+        XCTAssertFalse(store.scanning)
+    }
+    @MainActor
+    func testFailedSaveRetainsMemoryAndCorruptStorageDoesNotOpenAsEmptyLibrary() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true)
+        let blockingFile = folder.appendingPathComponent("file")
+        try Data([1]).write(to:blockingFile)
+        let store = LibraryStore(storageURL:blockingFile.appendingPathComponent("state.json"))
+        var initial = LibraryState(); var record = media("a"); record.analyzed = true
+        initial.records["a"] = record; store.seedForTesting(initial)
+        store.save(immediately:true)
+        let saved = await store.flushPendingSaves(); XCTAssertFalse(saved)
+        XCTAssertNotNil(store.saveError); XCTAssertTrue(store.state.records["a"]!.analyzed)
+        let corrupt = folder.appendingPathComponent("corrupt.json")
+        try Data("invalid json".utf8).write(to:corrupt)
+        let reopened = LibraryStore(storageURL:corrupt)
+        await reopened.start()
+        XCTAssertFalse(reopened.loaded); XCTAssertNotNil(reopened.loadError)
+        reopened.save(immediately:true)
+        XCTAssertEqual(try Data(contentsOf:corrupt),Data("invalid json".utf8))
+    }
+    func testIncompleteFullAccessRefreshPreservesSavedAnalysisAndSelection() {
+        var initial = LibraryState(); var a = media("a"), b = media("b")
+        a.analyzed = true; b.analyzed = true; b.text = "keep"
+        initial.records = ["a":a,"b":b]; initial.pending = ["a","b"]
+        for snapshot in [[],[media("a")]] {
+            let merged = LibraryMetadata.merge(snapshot,into:initial,fullAccess:true,retryUnavailable:false)
+            XCTAssertEqual(merged.records["b"]?.text,"keep")
+            XCTAssertEqual(merged.pending,["a","b"])
+        }
+        XCTAssertEqual(PendingSelection.valid(["a","b","missing"],pending:initial.pending,visible:["a"]),["a"])
+        XCTAssertEqual(PendingSelection.valid(["b"],pending:initial.pending,visible:["a","b"]),["b"])
+    }
+
     private func media(_ id: String, _ seconds: TimeInterval = 0,
                        lat: Double? = nil, lon: Double? = nil) -> MediaRecord {
         MediaRecord(id: id, date: Date(timeIntervalSince1970: 1_700_000_000 + seconds),
@@ -583,4 +650,11 @@ private final class StubScanDriver: ScanDriver {
     func pause() { scanning = false }
     func save(immediately: Bool) { }
     func prepareForBackgroundScan() async { }
+}
+
+@MainActor
+private final class ScanTestGate {
+    private var continuation: CheckedContinuation<Void,Never>?
+    func wait() async { await withCheckedContinuation { continuation = $0 } }
+    func release() { continuation?.resume(); continuation = nil }
 }
