@@ -36,17 +36,17 @@ struct AISettingsView: View {
             } header: {
                 Text("你的 DeepSeek")
             } footer: {
-                Text("推荐模型 deepseek-flash。接口固定为 DeepSeek 官方 HTTPS 地址，密钥只保存在此设备解锁时可访问的钥匙串。")
+                Text("密钥仅保存在本机钥匙串。")
             }
             if !result.isEmpty { Section("状态") { Text(result).textSelection(.enabled) } }
             Section("什么时候联网") {
                 Text("本地扫描不调用 API。只有你点击 AI 请求或测试连接时才联网，调用费用由你的 DeepSeek 账户承担。")
-                Text("照片 AI 可只发 OCR 文字，也可额外发送一张去除元数据、最长边 1024 像素的缩略图。每次先预览再发送。聊天、支付等截图可能含个人信息，请检查预览。")
-                Text("AI 整理仅发送你输入的指令，不发送整个图库、人物列表、定位或相册目录。返回条件在手机上筛选，只有你确认后才创建相册。")
+                Text("发送前可预览文字与图片。图片移除定位元数据；请留意截图内的个人信息。")
+                Text("整理指令在云端解析，照片在本机筛选，确认后创建相册。")
                 Text("不会自动重试请求。离开 AI 页面会取消等待，但已被服务端接收的请求仍可能计费。")
                 Link("DeepSeek 官方接口文档", destination: URL(string: "https://api-docs.deepseek.com/")!)
             }
-        }.navigationTitle("AI 设置").navigationBarTitleDisplayMode(.inline)
+        }.paperList().navigationTitle("AI 设置").navigationBarTitleDisplayMode(.inline)
             .onDisappear { key = ""; testTask?.cancel() }
     }
 }
@@ -70,14 +70,14 @@ struct AIPhotoView: View {
             Form {
                 Section("本次发送内容") {
                     Toggle("额外发送图片缩略图", isOn: $includeImage).disabled(running)
-                    Text("默认只发文字。开启后发送压缩缩略图，可能提高聊天、商品和梗图的区分效果。")
-                        .font(.footnote).foregroundStyle(.secondary)
-                    Text(preparedText.isEmpty ? "尚未识别到文字；可先运行本地扫描，或开启图片发送。" : preparedText)
+                    Text("发送至 DeepSeek，按账户计费。请检查下方预览。")
+                        .font(.footnote).foregroundStyle(Palette.secondary)
+                    Text(preparedText.isEmpty ? "无识别文字，可开启图片发送。" : preparedText)
                         .font(.footnote).textSelection(.enabled)
                     if includeImage, let preparedJPEG, let image = UIImage(data: preparedJPEG) {
                         Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 240)
                         Text("将发送此图 · \(preparedJPEG.count / 1024) KB，不含原图定位元数据。")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .font(.caption).foregroundStyle(Palette.secondary)
                     } else if includeImage && ready { Text("无法读取本地缩略图，请先在系统照片中下载原件。") }
                     Button(running ? "正在等待 DeepSeek…" : "确认发送并识别（会计费）") { send() }
                         .disabled(!ready || running || !APIKeyStore.hasKey || suggestion != nil
@@ -92,16 +92,16 @@ struct AIPhotoView: View {
                         if let keywords = suggestion.keywords, !keywords.isEmpty {
                             Text(keywords.map { "#" + $0 }.joined(separator: " "))
                         }
-                        Text(suggestion.explanation).font(.footnote).foregroundStyle(.secondary)
+                        Text(suggestion.explanation).font(.footnote).foregroundStyle(Palette.secondary)
                         Button("应用分类、内容标签与摘要") {
                             store.applyAI(suggestion, id: id)
                             dismiss()
                         }
-                        Text("只增加你确认的分类，不会删除原图、移动文件或自动关联人物身份。")
+                        Text("仅应用标签与摘要，原图不变。")
                             .font(.caption)
                     }
                 }
-            }.navigationTitle("DeepSeek 深入识别").navigationBarTitleDisplayMode(.inline)
+            }.paperList().navigationTitle("AI 识别").navigationBarTitleDisplayMode(.inline)
                 .toolbar { Button("关闭") { dismiss() } }
         }
         .task {
@@ -151,19 +151,19 @@ struct AIOrganizeView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                Text("用一句话，先生成整理草稿").font(.title2.bold())
+                Text("说说你想怎么整理").font(.system(size: 28, weight: .medium, design: .serif))
                 TextField("例如：把桐桐在长沙旅行的人像放一起", text: $command, axis: .vertical)
-                    .lineLimit(3...6).padding().background(.gray.opacity(0.08), in: RoundedRectangle(cornerRadius: 14))
+                    .lineLimit(3...5).padding(20).paperCard()
                     .disabled(running)
-                Text("只发送上面的指令，不上传图库。此版本按已有分类、OCR 文字、人物名、行程名筛选；复杂排除、日期推理和删除操作暂不支持。")
-                    .font(.footnote).foregroundStyle(.secondary)
+                Text("指令发送至 DeepSeek，按账户计费；不上传图库。")
+                    .font(.footnote).foregroundStyle(Palette.secondary)
                 HStack {
-                    Button(running ? "正在解析…" : "发送指令给 DeepSeek（会计费）") { generate() }
+                    Button(running ? "正在解析…" : "生成整理草稿") { generate() }
                         .buttonStyle(.borderedProminent)
                         .disabled(running || command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !APIKeyStore.hasKey)
                     if running { Button("取消") { requestTask?.cancel() } }
                 }
-                if !APIKeyStore.hasKey { NavigationLink("先配置 API Key") { AISettingsView() } }
+                if !APIKeyStore.hasKey { NavigationLink("连接 DeepSeek") { AISettingsView() } }
                 if !errorText.isEmpty { Text(errorText).foregroundStyle(.red) }
                 if let plan {
                     Text("整理条件 · 待你审核").font(.headline)
@@ -191,7 +191,7 @@ struct AIOrganizeView: View {
                     }
                 }
             }.padding()
-        }.navigationTitle("AI 整理").navigationBarTitleDisplayMode(.inline)
+        }.background(Palette.canvas).navigationTitle("AI 整理").navigationBarTitleDisplayMode(.inline)
             .toolbar { NavigationLink { AISettingsView() } label: { Image(systemName: "gearshape") } }
             .onChange(of: command) { _, _ in plan = nil; reviewed = false }
             .task(id: AIQueryKey(plan: plan, revision: store.indexVersion)) {

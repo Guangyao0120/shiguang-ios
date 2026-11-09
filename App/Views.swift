@@ -3,12 +3,12 @@ import Photos
 import PhotosUI
 import AVKit
 
-private let canvas = Color(red: 0.96, green: 0.95, blue: 0.92)
+private let canvas = Palette.canvas
 
 struct RootView: View {
     @EnvironmentObject var store: LibraryStore
     @Environment(\.scenePhase) private var phase
-    @State private var selectedTab = 0
+    @State private var selectedTab = DesignPreview.tab
     var body: some View {
         Group {
             if store.permitted {
@@ -16,18 +16,21 @@ struct RootView: View {
                     VStack(spacing: 18) {
                         ProgressView()
                         Text("正在读取上次的整理结果").font(.headline)
-                        Text("分类记录保存在手机里，此时不会重新识别照片。")
-                            .font(.subheadline).foregroundStyle(.secondary)
+                        
                     }.padding(28).frame(maxWidth: .infinity, maxHeight: .infinity).background(canvas)
                 } else {
                 TabView(selection: $selectedTab) {
-                    NavigationStack { HomeView() }.tabItem { Label("整理", systemImage: "square.grid.2x2") }.tag(0)
-                    NavigationStack { TripsView() }.tabItem { Label("出游", systemImage: "map") }.tag(1)
-                    NavigationStack { PeopleView() }.tabItem { Label("人物", systemImage: "person.2") }.tag(2)
-                    NavigationStack { PendingView() }.tabItem { Label("待删", systemImage: "trash") }
+                    NavigationStack { HomeView() }.toolbar(.hidden, for: .tabBar).tabItem { Label("整理", systemImage: "square.grid.2x2") }.tag(0)
+                    NavigationStack { TripsView() }.toolbar(.hidden, for: .tabBar).tabItem { Label("出游", systemImage: "map") }.tag(1)
+                    NavigationStack { PeopleView() }.toolbar(.hidden, for: .tabBar).tabItem { Label("人物", systemImage: "person.2") }.tag(2)
+                    NavigationStack { PendingView() }.toolbar(.hidden, for: .tabBar).tabItem { Label("待删", systemImage: "trash") }
                         .badge(store.visiblePending.count)
                         .tag(3)
-                    NavigationStack { AIOrganizeView() }.tabItem { Label("AI", systemImage: "sparkles") }.tag(4)
+                    NavigationStack { AIOrganizeView() }.toolbar(.hidden, for: .tabBar).tabItem { Label("AI", systemImage: "sparkles") }.tag(4)
+                }
+                .toolbar(.hidden, for: .tabBar)
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    GlassTabBar(selection: $selectedTab, pendingCount: store.visiblePending.count)
                 }
                 }
             } else {
@@ -35,8 +38,8 @@ struct RootView: View {
                     Image(systemName: "leaf.circle.fill").font(.system(size: 72)).foregroundStyle(.tint)
                     Text("拾光").font(.system(size: 44, weight: .bold, design: .rounded))
                     Text("让照片各归其处").font(.title2)
-                    Text("本地识别截图与人像，按行程回看记忆。原图留在系统相册，是否删除由你决定。")
-                        .foregroundStyle(.secondary)
+                    Text("整理照片，收藏回忆。")
+                        .foregroundStyle(Palette.secondary)
                     Button("选择可整理的照片") { Task { await store.connect() } }
                         .buttonStyle(.borderedProminent).controlSize(.large)
                     if store.authorization == .denied || store.authorization == .restricted {
@@ -44,8 +47,8 @@ struct RootView: View {
                             if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
                         }
                     }
-                    Text("可以先只授权少量测试照片。本地扫描不上传；可选 DeepSeek 功能需你主动发送。")
-                        .font(.footnote).foregroundStyle(.secondary)
+                    Text("照片留在本机，删除由你确认。")
+                        .font(.footnote).foregroundStyle(Palette.secondary)
                 }.padding(32).frame(maxWidth: .infinity, maxHeight: .infinity).background(canvas)
             }
         }
@@ -65,37 +68,37 @@ struct HomeView: View {
     @EnvironmentObject var store: LibraryStore
     @State private var query = ""
     @State private var searchResults: [MediaRecord] = []
+    @State private var showingHelp = false
     private let columns = [GridItem(.flexible()), GridItem(.flexible())]
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 26) {
                 HStack {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("少一点杂乱\n多一点回忆").font(.system(size: 30, weight: .bold, design: .rounded))
-                        Text("\(store.visibleActive.count) 项 · 本地扫描，AI 按需发送").foregroundStyle(.secondary)
+                        Text("留住喜欢的").font(.system(size: 30, weight: .medium, design: .serif))
+                        Text("\(store.visibleActive.count.formatted()) 项收藏").font(.subheadline).foregroundStyle(Palette.secondary)
                     }
                     Spacer()
-                    Image(systemName: "sparkles.rectangle.stack").font(.system(size: 40)).foregroundStyle(.tint)
+                    Image(systemName: "leaf").font(.system(size: 34, weight: .ultraLight)).foregroundStyle(Palette.accent)
                 }
                 VStack(alignment: .leading, spacing: 10) {
-                    Label(store.status, systemImage: "iphone.gen3.radiowaves.left.and.right")
-                        .font(.subheadline)
+                    Label(store.scanning ? store.status : (store.refreshing ? "核对相册中" : "从上次继续"), systemImage: store.scanning ? "viewfinder" : "checkmark.circle")
+                        .font(.subheadline).foregroundStyle(Palette.secondary)
                     if store.scanning { ProgressView(value: store.progress) }
                     HStack {
-                        Button(store.scanning ? "暂停扫描" : "识别下一批截图") {
+                        Button(store.scanning ? "暂停" : "整理截图") {
                             if store.scanning { store.pause() } else { store.scan() }
                         }.buttonStyle(.borderedProminent).disabled(store.busy || store.refreshing || !store.loaded)
                         Menu("更多") {
-                            Button("刷新图库目录（不重扫图片）") { store.refresh() }
-                            Button("扫描普通照片 · 本批最多100张") { store.scan(screenshotsOnly: false) }
+                            Button("刷新相册") { store.refresh() }
+                            Button("整理所有图片 · 每批100张") { store.scan(screenshotsOnly: false) }
+                            Button("使用说明", systemImage: "info.circle") { showingHelp = true }
                         }.disabled(store.scanning || store.busy || store.refreshing || !store.loaded)
                     }
-                    if store.refreshing { ProgressView("正在后台核对目录…") }
-                    Text("默认只扫描未识别截图，每批最多100张；温度升高或切换栏目会暂停。截图、视频栏目不需要图片识别即可查看。")
-                        .font(.caption).foregroundStyle(.secondary)
-                }.padding().frame(maxWidth: .infinity, alignment: .leading).background(.white.opacity(0.75), in: RoundedRectangle(cornerRadius: 20))
+                    if store.refreshing { ProgressView() }
+                }.padding().frame(maxWidth: .infinity, alignment: .leading).paperCard()
                 if store.authorization == .limited {
-                    Button("当前为部分照片授权 · 更改可访问照片") { presentLimitedPicker() }
+                    Button("管理可访问的照片") { presentLimitedPicker() }
                         .font(.footnote)
                 }
                 if !query.isEmpty {
@@ -104,7 +107,7 @@ struct HomeView: View {
                     NavigationLink { CollectionView(title: "全部照片与视频", scope: .all) } label: {
                         Label("查看全部照片与视频", systemImage: "photo.on.rectangle").frame(maxWidth: .infinity, alignment: .leading)
                     }.buttonStyle(.bordered)
-                    Text("已经分好，等你挑选").font(.title3.bold())
+                    Text("分类").font(.title3.weight(.medium))
                     LazyVGrid(columns: columns, spacing: 12) {
                         ForEach(PhotoTag.allCases) { tag in
                             NavigationLink { CollectionView(title: tag.rawValue, scope: .tag(tag)) } label: {
@@ -113,14 +116,14 @@ struct HomeView: View {
                                     HStack {
                                         Text(tag.rawValue).foregroundStyle(.primary)
                                         Spacer()
-                                        Text("\(store.index.byTag[tag]?.count ?? 0)").foregroundStyle(.secondary)
+                                        Text("\(store.index.byTag[tag]?.count ?? 0)").foregroundStyle(Palette.secondary)
                                     }.font(.subheadline.weight(.medium))
-                                }.padding(18).background(.white.opacity(0.8), in: RoundedRectangle(cornerRadius: 18))
+                                }.padding(20).paperCard(radius: 22)
                             }.buttonStyle(.plain)
                         }
                     }
                     NavigationLink { SimilarView() } label: {
-                        Label("相似照片审核 · \(store.similar.count) 组", systemImage: "square.on.square")
+                        Label("相似照片 · \(store.similar.count) 组", systemImage: "square.on.square")
                     }
                     if !store.allKeywords.isEmpty {
                         Text("我的标签").font(.title3.bold())
@@ -128,17 +131,17 @@ struct HomeView: View {
                             ForEach(store.allKeywords, id: \.self) { keyword in
                                 NavigationLink { CollectionView(title: "#" + keyword, scope: .keyword(keyword)) } label: {
                                     Text("#" + keyword).font(.caption).padding(10)
-                                        .frame(maxWidth: .infinity).background(.white, in: Capsule())
+                                        .frame(maxWidth: .infinity).background(Palette.surface, in: Capsule())
                                 }
                             }
                         }
                     }
-                    Text("人物名字由你关联；本地扫描暂不分析视频内容。")
-                        .font(.footnote).foregroundStyle(.secondary)
+                    
                 }
             }.padding(20)
         }.background(canvas).navigationTitle("拾光").navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $query, prompt: "搜文字、分类、人物或行程名")
+            .searchable(text: $query, prompt: "搜索照片与标签")
+            .sheet(isPresented: $showingHelp) { AlbumHelpView() }
             .task(id: "\(store.indexVersion):\(query)") {
                 guard !query.isEmpty else { searchResults = []; return }
                 do { try await Task.sleep(nanoseconds: 250_000_000) } catch { return }
@@ -187,7 +190,7 @@ struct CollectionView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 HStack {
-                    Text("\(records.count) 项").foregroundStyle(.secondary)
+                    Text("\(records.count) 项").foregroundStyle(Palette.secondary)
                     Spacer()
                     Button("连续整理") { reviewing = true }.buttonStyle(.borderedProminent).disabled(records.isEmpty)
                 }
@@ -227,7 +230,7 @@ struct MediaGrid: View {
     @State private var displayLimit = 120
     var body: some View {
         if records.isEmpty {
-            ContentUnavailableView("这里还没有照片", systemImage: "photo", description: Text("先运行本地扫描，或手动关联分类。"))
+            ContentUnavailableView("暂无照片", systemImage: "photo")
         } else {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 4)], spacing: 4) {
                 ForEach(Array(records.prefix(displayLimit))) { record in
@@ -243,10 +246,8 @@ struct MediaGrid: View {
                             }.clipShape(RoundedRectangle(cornerRadius: 10))
                             let labels = store.tagLabels(for: record)
                             Text(labels.prefix(2).map { "#" + $0 }.joined(separator: " "))
-                                .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
-                            if labels.count > 2 {
-                                Text("另有 \(labels.count - 2) 个标签").font(.system(size: 9)).foregroundStyle(.secondary)
-                            }
+                                .font(.caption2).foregroundStyle(Palette.secondary).lineLimit(1)
+
                         }
                     }.buttonStyle(.plain)
                 }
@@ -266,16 +267,18 @@ struct Thumbnail: View {
     @State private var image: UIImage?
     var body: some View {
         ZStack {
-            Color.gray.opacity(0.12)
+            Palette.surface
             if let image {
                 if fit { Image(uiImage: image).resizable().scaledToFit() }
                 else { Image(uiImage: image).resizable().scaledToFill() }
             } else {
-                Image(systemName: "photo.badge.exclamationmark").foregroundStyle(.secondary)
+                Image(systemName: DesignPreview.enabled ? "photo" : "photo.badge.exclamationmark")
+                    .font(.title2.weight(.ultraLight)).foregroundStyle(Palette.secondary)
             }
         }
         .task(id: id) {
             image = nil
+            guard !DesignPreview.enabled else { return }
             let result = await PhotoAccess.image(id: id, size: CGSize(width: resolution, height: resolution))
             if !Task.isCancelled { image = result }
         }
@@ -300,14 +303,13 @@ struct DetailView: View {
                     else { Thumbnail(id: id, fit: true, resolution: 1000).frame(height: 340).clipped() }
                     if record.isVideo {
                         Button(loadingVideo ? "正在读取本地视频…" : "播放本地视频") { loadVideo() }.disabled(loadingVideo)
-                        Text("当前只识别封面，不包含语音转录或祝福对象识别。")
-                            .font(.caption).foregroundStyle(.secondary)
+                        
                     }
-                    Text(record.date.formatted(date: .abbreviated, time: .shortened)).foregroundStyle(.secondary)
+                    Text(record.date.formatted(date: .abbreviated, time: .shortened)).foregroundStyle(Palette.secondary)
                     if let summary = record.aiSummary { Label(summary, systemImage: "sparkles").font(.headline) }
                     Button("用 DeepSeek 深入识别") { showingAI = true }.buttonStyle(.bordered)
                     if record.unavailable {
-                        Label("素材可能仅在 iCloud；请先在系统照片中下载后再扫描。", systemImage: "icloud.slash")
+                        Label("请先在苹果照片中下载原件", systemImage: "icloud.slash")
                             .font(.footnote)
                     }
                     Text("照片标签").font(.headline)
@@ -320,8 +322,7 @@ struct DetailView: View {
                         Button("添加") { store.addKeywords(id, input: keywordInput); keywordInput = "" }
                             .disabled(keywordInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
-                    Text("自由标签最多 40 个，每个 24 字。可用逗号分隔；点击下方标签的 × 移除，不会删除照片。")
-                        .font(.caption).foregroundStyle(.secondary)
+                    
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 90))]) {
                         ForEach(record.customTags, id: \.self) { keyword in
                             Button { store.removeKeyword(id, keyword: keyword) } label: {
@@ -342,7 +343,7 @@ struct DetailView: View {
                         }
                     }
                     Text("关联人物").font(.headline)
-                    if store.state.people.isEmpty { Text("先在「人物」页创建桐桐等名字。这里是手动关联。 ").font(.footnote).foregroundStyle(.secondary) }
+                    if store.state.people.isEmpty { Text("在「人物」中添加名字").font(.footnote).foregroundStyle(Palette.secondary) }
                     ForEach(store.state.people) { person in
                         Button { store.togglePerson(id, person.id) } label: {
                             Label(person.name, systemImage: record.people.contains(person.id) ? "checkmark.circle.fill" : "circle")
@@ -395,7 +396,7 @@ struct ReviewView: View {
     private var current: String? { index < ids.count ? ids[index] : nil }
     var body: some View {
         VStack(spacing: 18) {
-            Text("\(min(index + 1, ids.count)) / \(ids.count)").font(.subheadline).foregroundStyle(.secondary)
+            Text("\(min(index + 1, ids.count)) / \(ids.count)").font(.subheadline).foregroundStyle(Palette.secondary)
             if let current {
                 Thumbnail(id: current, fit: true, resolution: 1000).frame(maxHeight: .infinity).clipped()
                     .clipShape(RoundedRectangle(cornerRadius: 20))
@@ -408,7 +409,7 @@ struct ReviewView: View {
                         else if abs(value.translation.width) > 100 { index += 1 }
                         withAnimation { offset = .zero }
                     })
-                Text("上滑待删 · 左右滑跳过 · 原图暂不删除").font(.footnote).foregroundStyle(.secondary)
+                Text("上滑待删 · 左右跳过").font(.footnote).foregroundStyle(Palette.secondary)
                 HStack {
                     Button("跳过") { index += 1 }.buttonStyle(.bordered)
                     Button("放入待删", role: .destructive) { stageCurrent() }.buttonStyle(.bordered)
@@ -441,9 +442,9 @@ struct PendingView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                Text("先放这里，想好再删").font(.title2.bold())
-                Text("这里是 App 内的待删队列，原图还在系统相册。点击图片可以恢复。")
-                    .font(.subheadline).foregroundStyle(.secondary)
+                Text("再想一想，也没关系").font(.title2.bold())
+                Text("原图仍在相册，可随时恢复。")
+                    .font(.subheadline).foregroundStyle(Palette.secondary)
                 MediaGrid(records: store.visiblePending)
                 if !store.visiblePending.isEmpty {
                     Button("全部恢复") {
@@ -453,8 +454,8 @@ struct PendingView: View {
                         Text(store.busy ? "等待系统处理…" : "请求系统删除 \(store.visiblePending.count) 项")
                             .frame(maxWidth: .infinity)
                     }.buttonStyle(.borderedProminent).disabled(store.busy || store.scanning)
-                    Text("下一步由 iOS 确认。开启 iCloud 照片时，删除会同步到其他设备。删除后请到系统「最近删除」中恢复或清空。")
-                        .font(.footnote).foregroundStyle(.secondary)
+                    Text("删除需系统确认，并同步 iCloud；可从「最近删除」恢复。")
+                        .font(.footnote).foregroundStyle(Palette.secondary)
                 }
             }.padding()
         }.background(canvas).navigationTitle("待删")
@@ -469,10 +470,10 @@ struct PeopleView: View {
         List {
             Section {
                 NavigationLink { CollectionView(title: "全部人像", scope: .tag(.portrait)) } label: {
-                    Label("检测到人脸的照片", systemImage: "person.crop.rectangle")
+                    Label("全部人像", systemImage: "person.crop.rectangle")
                 }
-            } footer: { Text("第一版检测人脸，但不自动认出同一个人。创建名字后，在照片详情中关联，不会把相似面孔当作确定身份。") }
-            Section("我认识的人") {
+            }
+            Section("我的人物") {
                 ForEach(store.state.people) { person in
                     NavigationLink { CollectionView(title: person.name, scope: .person(person.id)) } label: {
                         Label(person.name, systemImage: "person.crop.circle")
@@ -480,7 +481,7 @@ struct PeopleView: View {
                 }
                 Button("添加人物") { name = ""; naming = true }
             }
-        }.navigationTitle("人物")
+        }.paperList().navigationTitle("人物")
         .alert("人物名字", isPresented: $naming) {
             TextField("例如：桐桐", text: $name)
             Button("添加") { store.addPerson(name) }
@@ -494,9 +495,9 @@ struct TripsView: View {
     @State private var creating = false
     var body: some View {
         List {
-            Section {
-                Text("按时间与已有定位生成候选。你可以改成「中秋 · 长沙」，也可以按日期创建，再补充朋友发来的照片。")
-                    .font(.subheadline).foregroundStyle(.secondary)
+            if store.state.trips.isEmpty {
+                ContentUnavailableView("每一次出发，都值得收藏", systemImage: "map", description: Text("按日期创建，或整理行程候选"))
+                    .listRowBackground(Color.clear)
             }
             ForEach(store.state.trips) { trip in
                 NavigationLink { CollectionView(title: trip.name, scope: .trip(trip.id)) } label: {
@@ -505,12 +506,12 @@ struct TripsView: View {
                         VStack(alignment: .leading) {
                             Text(trip.name)
                             Text("\(store.index.byTrip[trip.id]?.count ?? 0) 项 · \(trip.manual ? "已手动整理" : "待确认候选")")
-                                .font(.caption).foregroundStyle(.secondary)
+                                .font(.caption).foregroundStyle(Palette.secondary)
                         }
                     }.padding(.vertical, 6)
                 }
             }
-        }.navigationTitle("每一次出发")
+        }.paperList().navigationTitle("出游")
             .toolbar {
                 Button("整理候选") { store.rebuildTrips() }.disabled(store.busy || store.scanning || store.refreshing)
                 Button { creating = true } label: { Image(systemName: "plus") }
@@ -531,9 +532,9 @@ struct CreateTripView: View {
                 TextField("行程名，例如：中秋 · 长沙", text: $name)
                 DatePicker("开始日期", selection: $start, displayedComponents: .date)
                 DatePicker("结束日期", selection: $end, in: start..., displayedComponents: .date)
-                Text("把此日期范围内的可访问照片和视频加入行程。之后可在照片详情中增减，不移动或复制原图。")
-                    .font(.footnote).foregroundStyle(.secondary)
-            }.navigationTitle("创建行程")
+                Text("按所选日期归入，不复制原图。")
+                    .font(.footnote).foregroundStyle(Palette.secondary)
+            }.paperList().navigationTitle("创建行程")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
@@ -552,8 +553,7 @@ struct SimilarView: View {
             LazyVStack(alignment: .leading, spacing: 20) {
                 Button(store.busy ? "正在比对…" : "查找相似照片") { store.findSimilar() }
                     .buttonStyle(.borderedProminent).disabled(store.busy || store.scanning || store.refreshing)
-                Text("按需比对最多3000张已识别图片，上限20万次比较；不自动在每次扫描后运行。结果只是相似建议，可能漏检。")
-                    .font(.footnote).foregroundStyle(.secondary)
+                Text("相似候选，请逐张确认").font(.subheadline).foregroundStyle(Palette.secondary)
                 if store.similar.isEmpty { ContentUnavailableView("暂无候选", systemImage: "square.on.square", description: Text("完成本地扫描后在这里查看。")) }
                 ForEach(Array(store.similar.enumerated()), id: \.offset) { _, pair in
                     HStack(alignment: .top, spacing: 12) {
@@ -569,7 +569,7 @@ struct SimilarView: View {
                                 }.frame(maxWidth: .infinity)
                             }
                         }
-                    }.padding().background(.white, in: RoundedRectangle(cornerRadius: 16))
+                    }.padding().paperCard(radius: 22)
                 }
             }.padding()
         }.background(canvas).navigationTitle("相似照片")

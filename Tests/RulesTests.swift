@@ -1,7 +1,30 @@
 import XCTest
+import SwiftUI
+import UIKit
 @testable import Shiguang
 
 final class RulesTests: XCTestCase {
+    func testLightAndDarkTextRemainReadableOnCardsAndCanvas() {
+        func luminance(_ color: Color, _ style: UIUserInterfaceStyle) -> Double {
+            let resolved = UIColor(color).resolvedColor(with: UITraitCollection(userInterfaceStyle: style))
+            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+            XCTAssertTrue(resolved.getRed(&r, green: &g, blue: &b, alpha: &a))
+            func linear(_ value: CGFloat) -> Double {
+                let v = Double(value)
+                return v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4)
+            }
+            return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
+        }
+        for style in [UIUserInterfaceStyle.light, .dark] {
+            for text in [Palette.ink, Palette.secondary, Palette.accent] {
+                for background in [Palette.surface, Palette.canvas] {
+                    let first = luminance(text, style), second = luminance(background, style)
+                    let contrast = (max(first, second) + 0.05) / (min(first, second) + 0.05)
+                    XCTAssertGreaterThanOrEqual(contrast, 4.5, "Text contrast in \(style.rawValue)")
+                }
+            }
+        }
+    }
     func testLargeLibraryIndexPreparesCountsWithoutRepeatedViewSorting() {
         var state = LibraryState()
         let person = NamedPerson(name: "桐桐")

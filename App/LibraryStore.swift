@@ -41,14 +41,12 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
         let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         disk = LibraryDisk(url: folder.appendingPathComponent("library-v1.json"))
         super.init()
-        for name in [ProcessInfo.thermalStateDidChangeNotification, UIApplication.didReceiveMemoryWarningNotification] {
+        for name in [UIApplication.didReceiveMemoryWarningNotification] {
             observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
                 Task { @MainActor in
                     if note.name == UIApplication.didReceiveMemoryWarningNotification {
                         PhotoAccess.clearCache(); self?.pause()
                         self?.status = "内存紧张，扫描已暂停；已完成结果保留"
-                    } else if ProcessInfo.processInfo.thermalState != .nominal {
-                        self?.pause(); self?.status = "手机温度升高，扫描已暂停；降温后手动继续"
                     }
                 }
             })
@@ -56,6 +54,27 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
     }
 
     func start() async {
+        #if DEBUG
+        if DesignPreview.enabled {
+            authorization = .authorized
+            var sample = LibraryState()
+            let person = NamedPerson(name: "桐桐")
+            sample.people = [person]
+            for i in 0..<78 {
+                var record = MediaRecord(id: "preview-\(i)", date: Date().addingTimeInterval(Double(-i * 3600)), isVideo: false, isScreenshot: i % 2 == 0, duration: 0)
+                record.analyzed = true
+                record.tags = [PhotoTag.allCases[i % PhotoTag.allCases.count]]
+                if i % 4 == 0 { record.people = [person.id]; record.keywords = ["日常"] }
+                sample.records[record.id] = record
+            }
+            sample.trips = [Trip(name: "中秋 · 长沙", members: Set((0..<18).map { "preview-\($0)" }))]
+            sample.pending = ["preview-3", "preview-7"]
+            state = sample; visibleIDs = Set(sample.records.keys)
+            index = await Task.detached { LibraryIndex.build(state: sample, visible: Set(sample.records.keys)) }.value
+            indexVersion += 1; status = "从上次继续"; loaded = true
+            return
+        }
+        #endif
         guard !starting else { return }
         guard !loaded else { refreshIfNeeded(); return }
         starting = true
@@ -127,6 +146,7 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
         Task { @MainActor [weak self] in self?.metadataDirty = true }
     }
     func refreshIfNeeded() {
+        guard !DesignPreview.enabled else { return }
         let updated = PHPhotoLibrary.authorizationStatus(for: .readWrite)
         if updated != authorization { authorization = updated; metadataDirty = true }
         if metadataDirty { refresh(force: false) }
@@ -160,9 +180,6 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
 
     func scan(screenshotsOnly: Bool = true) {
         guard !scanning, !busy, !refreshing, loaded, permitted else { return }
-        guard ProcessInfo.processInfo.thermalState == .nominal, !ProcessInfo.processInfo.isLowPowerModeEnabled else {
-            status = "温度升高或低电量模式，暂不启动扫描"; return
-        }
         let todo = ScanPolicy.candidates(records.compactMap { state.records[$0.id] }, screenshotsOnly: screenshotsOnly)
         guard !todo.isEmpty else { status = "没有可处理的\(screenshotsOnly ? "截图" : "图片")；本批已完成，云端原件可下载后刷新重试"; return }
         scanning = true; progress = 0
@@ -172,9 +189,6 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
             defer { self.commitAnalysis(updates); self.scanning = false; self.save(immediately: true) }
             for (position, record) in todo.enumerated() {
                 if Task.isCancelled { return }
-                guard ProcessInfo.processInfo.thermalState == .nominal, !ProcessInfo.processInfo.isLowPowerModeEnabled else {
-                    self.status = "温度升高或低电量，已暂停；完成结果已保留"; return
-                }
                 var updated = record
                 let image = await PhotoAccess.image(id: record.id, size: CGSize(width: record.isScreenshot ? 1024 : 640, height: record.isScreenshot ? 1024 : 640), highQuality: true)
                 guard !Task.isCancelled else { return }
@@ -289,7 +303,6 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
     }
     func findSimilar() {
         guard !busy, !scanning, !refreshing else { return }
-        guard ProcessInfo.processInfo.thermalState == .nominal else { status = "请等待手机降温后再查重"; return }
         busy = true
         let snapshot = visibleActive
         Task {
