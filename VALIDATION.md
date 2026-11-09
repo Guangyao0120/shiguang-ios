@@ -2,6 +2,17 @@
 
 日期：2026-11-09。
 
+## GitHub macOS 云端实测通过
+
+- 仓库：`Guangyao0120/shiguang-ios`（私有）。
+- 代码提交：`a0f687ccdd05fd10ae49cfc4b85f5824a0ba15e7`。
+- [成功运行 42585309508](https://github.com/Guangyao0120/shiguang-ios/actions/runs/42585309508)：结论 success。
+- 云端使用 Xcode 16.4，iOS 模拟器通用构建 `BUILD SUCCEEDED`。
+- 模拟器 XCTest：13 项测试，0 failures；`TEST SUCCEEDED`。
+- 模拟器 App ZIP 与日志/xcresult 已上传为 Actions Artifacts，保留 7 天。
+- 首次真实编译发现并修复了 SwiftUI Section 初始化写法和 PhotosUI 导入两个问题；修复已同步本地与远端。
+- 测试涵盖多标签分类、手工覆盖、持久化、待删状态、旅行分组、相似照片、API 请求结构/返回校验、标签清理与组合筛选。真实 AI 接口与图库权限、删除弹窗不在这 13 项单元测试的覆盖范围内。
+
 ## 此环境已执行
 
 - Tree-sitter Swift 语法树解析：7 个 App 源文件及 1 个 XCTest 源文件，无 ERROR 或 missing 节点。
@@ -11,16 +22,16 @@
 - 人工检查删除流程：上滑只进入本地状态；真实删除仅通过 `PHPhotoLibrary.performChanges` 提交；错误/取消路径保留队列；成功路径移除对应引用。
 - 人工检查相册创建、权限范围过滤、手工标签覆盖规则、本地图片与视频请求的网络禁用设置。
 - DeepSeek：官方固定 HTTPS 地址、仅请求时读取钥匙串、禁重定向、ephemeral 会话不缓存、显式发送预览、不自动重试、不支持条件阻止匹配、AI 结果不能调用删除操作。
-- API 夹具 XCTest 已添加：有图/无图请求形状、拒绝空/截断返回、标签白名单、不支持条件阻止匹配、人物/行程/分类交集。此环境尚未执行 XCTest。
-- v0.3 新增标签去重/清理、序列化、自由标签精确筛选与未分类回退的 XCTest 代码；新增界面与模型通过 Swift 静态语法解析，XCTest 尚未执行。
+- API 夹具 XCTest：有图/无图请求形状、拒绝空/截断返回、标签白名单、不支持条件阻止匹配、人物/行程/分类交集；已在云端模拟器执行通过。
+- v0.3 标签去重/清理、序列化、自由标签精确筛选与未分类回退 XCTest 已通过。
 
 ## 尚未执行，不能宣称通过
 
-- Xcode 编译、Apple SDK 类型检查、链接、模拟器启动、XCTest。
+- 真实 iPhone 构建签名、安装、实际图库界面验收与性能测试。
 - DeepSeek 真实账户请求、Keychain 真机读写与删除、网络取消、图片模型识别效果；没有使用或索取真实 Key，不宣称已联通。
 - iPhone 真机运行、系统授权与确认弹窗、iCloud 资源缺失、Live Photo 删除、视频播放、内存/发热/耗电、分类准确率、无障碍与界面视觉验收。
 
-当前主机为 Windows，没有 Xcode、iOS SDK 或 Swift 工具链。语法检查不能替代编译；源码可能仍需根据真实 SDK 编译错误调整。附带共享 scheme、XCTest 和手动触发的 macOS GitHub Actions 工作流，供下一阶段验证。未创建远端仓库、未触发任何云端任务、未签名或生成 IPA。
+本地主机为 Windows；通过用户授权的 GitHub 私有仓库运行 macOS Actions，已完成真实 SDK 编译、链接及模拟器 XCTest。未签名或生成可供手机安装的 IPA，也未使用任何真实 DeepSeek Key。
 
 ## 真机验收顺序
 

@@ -9,7 +9,13 @@
 3. 连接 iPhone，开启开发者模式，选择手机运行。首次启动授权照片读取和修改权限。
 4. 也可以先在模拟器里导入少量测试照片，再运行。可在 Xcode 的 Product → Test 执行单元测试。
 
-Windows 可以修改源码，但此环境没有 Xcode / iOS SDK，尚未完成苹果平台编译和真机验证。此交付是待苹果平台编译验证的工程源码，不是已经签名的 IPA 或已经安装的 App。
+已在 GitHub Actions 的 macOS / Xcode 16.4 环境完成模拟器构建及 13 项 XCTest（0 失败）。[查看通过的构建](https://github.com/Guangyao0120/shiguang-ios/actions/runs/42585309508)。真实 iPhone 的签名、安装、图库操作与 DeepSeek 实际调用尚未验收；当前产物是模拟器 App，不是手机可安装 IPA。
+
+## GitHub 云端构建
+
+工程已上传到私有仓库 [Guangyao0120/shiguang-ios](https://github.com/Guangyao0120/shiguang-ios)。打开仓库的 Actions → iOS build and tests → Run workflow，选择 main 即可手动构建。修改 App、Tests、Xcode 工程或工作流并推送 main 也会自动构建。
+
+绿色 success 表示构建和测试通过。运行详情底部的 Artifacts 包含 `Shiguang-Simulator` 与 `Shiguang-Build-Reports`，保留 7 天。前者只用于 Mac 上的 iOS 模拟器，不能装进真实 iPhone；后者是编译日志与 XCTest 报告。构建不需要 DeepSeek Key 或苹果签名证书，测试使用虚构 Key 和响应夹具，不会产生 DeepSeek 调用费用。GitHub Actions 自身计算用量按账户额度计费。
 
 ## DeepSeek 接入（v0.2）
 
@@ -21,7 +27,7 @@ Windows 可以修改源码，但此环境没有 Xcode / iOS SDK，尚未完成�
 - v0.2 不支持日期推理、排除/OR 筛选、自动认人或视频语音理解；模型明确返回不支持项时停止匹配。筛选依赖已有本地标签/人物/行程，不能保证找全。
 - 401/402/429、网络超时、空输出、截断或非法标签均有失败提示，不自动重试、不自动删除。离开 AI 界面取消本地等待，不保证撤销服务端已经发生的费用。
 - 启用云端识别后，**你确认发送的内容会离开手机并交给 DeepSeek**。不上传未选择的图库；本地扫描不调用 API。隐私 manifest 包含可选云端功能的图片和用户内容传输声明，上架前仍需结合服务商实际条款核对 App Store 隐私标签。
-- API 接口已按当前官方文档实现；没有收到真实 Key，尚未做真实账户联调。请在手机上测试连接。语法验证和请求夹具测试代码不能代替真实 API 与 iOS 测试。
+- API 接口已按当前官方文档实现；没有收到真实 Key，尚未做真实账户联调。请在手机上测试连接。已通过的请求/返回夹具 XCTest 不能代替真实 API 联调。
 
 官方参考：[调用方式](https://api-docs.deepseek.com/)、[图片输入](https://api-docs.deepseek.com/guides/vision/)、[JSON 输出](https://api-docs.deepseek.com/guides/json_mode/)。
 
@@ -34,7 +40,7 @@ Windows 可以修改源码，但此环境没有 Xcode / iOS SDK，尚未完成�
 - DeepSeek 识别结果增加至多12个自由内容标签的建议，先预览再应用；例如物体、活动、场景、商品品类，不能随意猜测身份、地点或敏感属性。不自动对整库调用计费 API。
 - AI 整理支持按已有自由标签精确匹配，多标签取 AND；它不会在匹配时偷偷分析或上传全部照片。
 - 所有标签保存在 App 本地整理数据库，**不是写进原图文件，也不保证出现在苹果照片的关键词中**。卸载 App 会丢失 App 私有标签，当前还没有独立标签导出/恢复功能。原图不会因为移除标签而删除。
-- 数据字段采用可选值，v0.2 本地记录可以继续读取；新增语法与存储/标签匹配测试代码，仍需在 Apple 平台运行验证。
+- 数据字段采用可选值，v0.2 本地记录可以继续读取；标签清理、存储与匹配测试已在 iOS 模拟器通过。
 
 ## 第一版功能
 
@@ -66,7 +72,7 @@ Windows 可以修改源码，但此环境没有 Xcode / iOS SDK，尚未完成�
 ## 验证状态
 
 - Windows：工程结构、plist、资源 JSON、源文件语法解析与交付清单检查（见 `VALIDATION.md`）。
-- Apple 平台：需运行 Xcode build/test；权限、删除取消、Live Photo、iCloud-only、扫描中断、内存和耗电需真机验收。附带 GitHub Actions 模板可在你自己的仓库手动触发 macOS 模拟器构建和测试。
+- Apple 平台：GitHub macOS 云端 build/test 已通过，13 项测试 0 失败；权限、删除取消、Live Photo、iCloud-only、扫描中断、内存和耗电仍需真机验收。
 
 ## 源码
 
