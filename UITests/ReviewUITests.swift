@@ -1,4 +1,5 @@
 import XCTest
+import CoreGraphics
 
 final class ReviewUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
