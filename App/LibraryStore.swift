@@ -144,7 +144,7 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
     }
 
     func save(immediately: Bool = false) {
-        guard loaded && storageReadable else { return }
+        guard loaded && storageReadable && !DesignPreview.enabled else { return }
         // Coalesce progress commits; LibraryDisk persists only changed rows.
         if (scanning || busy) && !immediately && pendingSaveID != nil { return }
         saveTask?.cancel()

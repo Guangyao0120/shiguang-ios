@@ -98,6 +98,7 @@ private final class ReviewScrollView: UIView, UIGestureRecognizerDelegate {
     private var previousID: String?
     private var generation = 0
     private var animating = false
+    private var dragOrigin = CGPoint.zero
     private var step: (Int)->Void = { _ in }
     private var stage: ()->Void = {}
     private var pan: UIPanGestureRecognizer!
@@ -122,7 +123,7 @@ private final class ReviewScrollView: UIView, UIGestureRecognizerDelegate {
     func configure(current: String,previous: String?,next: String?,video: Bool,images: [String:UIImage],failed: Set<String>,step: @escaping (Int)->Void,stage: @escaping ()->Void) {
         self.step = step; self.stage = stage; previousID = previous
         if currentID != current {
-            generation += 1; currentID = current; animating = false
+            generation += 1; currentID = current; animating = false; dragOrigin = .zero
             cards[1].layer.removeAllAnimations(); cards[1].transform = .identity; badge.alpha = 0
             cards[0].alpha = 0; cards[2].alpha = 0
         }
@@ -150,8 +151,14 @@ private final class ReviewScrollView: UIView, UIGestureRecognizerDelegate {
         return !animating && (abs(v.x) > abs(v.y) || v.y < 0)
     }
     @objc private func drag(_ recognizer: UIPanGestureRecognizer) {
-        let p = recognizer.translation(in:self), v = recognizer.velocity(in:self)
+        let raw = recognizer.translation(in:self), v = recognizer.velocity(in:self)
+        let p = CGPoint(x:raw.x+dragOrigin.x,y:raw.y+dragOrigin.y)
         switch recognizer.state {
+        case .began:
+            let transform = cards[1].layer.presentation()?.affineTransform() ?? cards[1].transform
+            cards[1].layer.removeAllAnimations(); badge.layer.removeAllAnimations()
+            cards[1].transform = transform
+            dragOrigin = CGPoint(x:transform.tx,y:transform.ty/0.65)
         case .changed:
             cards[0].alpha = p.x > 0 && previousID != nil ? 1 : 0; cards[2].alpha = cards[0].alpha == 0 ? 1 : 0
             let x = p.x > 0 && previousID == nil ? p.x*0.25 : p.x

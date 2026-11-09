@@ -59,7 +59,8 @@ final class ReviewUITests: XCTestCase {
             app.buttons["review.done"].tap()
             app.navigationBars.buttons.element(boundBy:0).tap()
             // Return to the top so each category starts from the same Home state.
-            for _ in 0..<5 { app.swipeDown() }
+            let top = app.descendants(matching:.any).matching(identifier:"collection.tag.人像").firstMatch
+            for _ in 0..<8 { if top.isHittable { break }; app.swipeDown() }
         }
         app.terminate()
     }
@@ -72,7 +73,7 @@ final class ReviewUITests: XCTestCase {
         app.launch()
         let all = app.buttons["collection.all"]
         XCTAssertTrue(all.waitForExistence(timeout:25)); all.tap()
-        let photos = app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@","media.open."))
+        let photos = app.buttons.matching(NSPredicate(format:"identifier BEGINSWITH %@ AND NOT identifier BEGINSWITH %@","media.open.","media.open.preview-"))
         XCTAssertTrue(photos.element(boundBy:0).waitForExistence(timeout:15)); photos.element(boundBy:0).tap()
         let photo = app.descendants(matching:.any).matching(identifier:"review.photo").firstMatch
         XCTAssertTrue(photo.waitForExistence(timeout:15))

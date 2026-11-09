@@ -47,6 +47,9 @@ jobs:
           PROJECT=$(find "$GITHUB_WORKSPACE" -name Shiguang.xcodeproj -type d -print -quit)
           test -n "$PROJECT"
           echo "SHIGUANG_PROJECT=$PROJECT" >> "$GITHUB_ENV"
+      - name: Prepare fresh simulator
+        timeout-minutes: 8
+        run: python3 scripts/boot_test_simulator.py
       - name: Build for generic simulator
         run: |
           set -o pipefail
@@ -55,9 +58,6 @@ jobs:
         timeout-minutes: 25
         run: |
           set -o pipefail
-          DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import sys,json; d=json.load(sys.stdin); print(next(x["udid"] for k,v in d["devices"].items() if "iOS-26" in k for x in v if "iPhone" in x["name"]))')
-          xcrun simctl boot "$DEVICE_ID" || true
-          python3 -c 'import subprocess,sys; subprocess.run(["xcrun","simctl","bootstatus",sys.argv[1],"-b"],check=True,timeout=180)' "$DEVICE_ID"
           xcrun simctl install "$DEVICE_ID" "$RUNNER_TEMP/ShiguangBuild/Build/Products/Debug-iphonesimulator/Shiguang.app"
           xcrun simctl privacy "$DEVICE_ID" grant photos com.example.Shiguang
           python3 scripts/prepare_photo_fixtures.py
@@ -83,8 +83,6 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         run: |
           set -euo pipefail
-          DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import sys,json; d=json.load(sys.stdin); print(next(x["udid"] for k,v in d["devices"].items() if "iOS-26" in k for x in v if "iPhone" in x["name"]))')
-          xcrun simctl boot "$DEVICE_ID" || true
           xcrun simctl bootstatus "$DEVICE_ID" -b
           xcrun simctl install "$DEVICE_ID" "$RUNNER_TEMP/ShiguangBuild/Build/Products/Debug-iphonesimulator/Shiguang.app"
           mkdir -p "$RUNNER_TEMP/Appearance"
