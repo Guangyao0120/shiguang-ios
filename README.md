@@ -74,7 +74,7 @@
 ## 验证状态
 
 - Windows：工程结构、plist、资源 JSON、源文件语法解析与交付清单检查（见 `VALIDATION.md`）。
-- Apple 平台：GitHub macOS 云端 build/test 已通过，旧版13项测试通过；v0.4新增大图库、增量扫描和持久化回归测试，结果见 VALIDATION.md；权限、删除取消、Live Photo、iCloud-only、扫描中断、内存和耗电仍需真机验收。
+- Apple 平台：GitHub macOS 云端 build/test 已通过，v0.4共19项测试通过（0失败），含大图库、增量扫描和持久化回归；结果见 VALIDATION.md；权限、删除取消、Live Photo、iCloud-only、扫描中断、内存和耗电仍需真机验收。
 
 ## 源码
 
