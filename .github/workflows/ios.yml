@@ -55,3 +55,47 @@ jobs:
             ${{ runner.temp }}/tests.log
             ${{ runner.temp }}/TestResults.xcresult
           retention-days: 7
+  iphone:
+    needs: simulator
+    runs-on: macos-15
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Archive for real iPhone (sign locally before install)
+        run: |
+          set -o pipefail
+          xcodebuild -project Shiguang.xcodeproj -scheme Shiguang -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/Shiguang.xcarchive" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY='' archive 2>&1 | tee "$RUNNER_TEMP/iphone-build.log"
+      - name: Verify and package iPhone IPA
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/Shiguang.xcarchive/Products/Applications/Shiguang.app"
+          test -d "$APP"
+          xcrun lipo -archs "$APP/Shiguang" | tee "$RUNNER_TEMP/iphone-architectures.txt"
+          xcrun vtool -show-build "$APP/Shiguang" | tee "$RUNNER_TEMP/iphone-platform.txt"
+          grep -q 'arm64' "$RUNNER_TEMP/iphone-architectures.txt"
+          grep -Eq 'platform[[:space:]]+IOS$' "$RUNNER_TEMP/iphone-platform.txt"
+          mkdir -p "$RUNNER_TEMP/iPhonePackage/Payload"
+          ditto "$APP" "$RUNNER_TEMP/iPhonePackage/Payload/Shiguang.app"
+          cd "$RUNNER_TEMP/iPhonePackage"
+          ditto -c -k --keepParent Payload "$RUNNER_TEMP/Shiguang-iPhone-unsigned.ipa"
+          unzip -t "$RUNNER_TEMP/Shiguang-iPhone-unsigned.ipa"
+          shasum -a 256 "$RUNNER_TEMP/Shiguang-iPhone-unsigned.ipa" | tee "$RUNNER_TEMP/iphone-sha256.txt"
+      - name: Upload iPhone IPA for local signing
+        uses: actions/upload-artifact@v4
+        with:
+          name: Shiguang-iPhone-IPA-unsigned
+          path: ${{ runner.temp }}/Shiguang-iPhone-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload iPhone build reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Shiguang-iPhone-Reports
+          path: |
+            ${{ runner.temp }}/iphone-build.log
+            ${{ runner.temp }}/iphone-architectures.txt
+            ${{ runner.temp }}/iphone-platform.txt
+            ${{ runner.temp }}/iphone-sha256.txt
+          retention-days: 14
+
