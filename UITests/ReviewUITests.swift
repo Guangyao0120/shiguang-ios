@@ -3,11 +3,16 @@ import CoreGraphics
 
 final class ReviewUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
+    @MainActor
     func testHomePortraitReviewUsesTheSameControlsAndGestures() { checkRoute(tab:"整理",entry:"collection.tag.人像",prefix:false) }
+    @MainActor
     func testPeopleAllReviewUsesTheSameControlsAndGestures() { checkRoute(tab:"人物",entry:"collection.people.all",prefix:false) }
+    @MainActor
     func testNamedPersonReviewUsesTheSameControlsAndGestures() { checkRoute(tab:"人物",entry:"collection.person.",prefix:true) }
+    @MainActor
     func testTripReviewUsesTheSameControlsAndGestures() { checkRoute(tab:"出游",entry:"collection.trip.",prefix:true) }
 
+    @MainActor
     private func checkRoute(tab: String, entry: String, prefix: Bool) {
         let app = XCUIApplication()
         app.launchEnvironment["SHIGUANG_DESIGN_PREVIEW"] = "1"
@@ -41,6 +46,7 @@ final class ReviewUITests: XCTestCase {
         XCTAssertTrue(start.waitForExistence(timeout:10))
         app.terminate()
     }
+    @MainActor
     private func checkControls(_ app: XCUIApplication) {
         let clear = app.buttons["review.clear"], next = app.buttons["review.next"], stage = app.buttons["review.stage"]
         XCTAssertTrue(clear.isHittable); XCTAssertTrue(next.isHittable); XCTAssertTrue(stage.isHittable)
@@ -50,11 +56,13 @@ final class ReviewUITests: XCTestCase {
         XCTAssertEqual(next.frame.midY,stage.frame.midY,accuracy:2)
         XCTAssertLessThan(stage.frame.maxY,app.frame.maxY-15)
     }
+    @MainActor
     private func assertPosition(_ position: Int,counter: XCUIElement) {
         let predicate = NSPredicate(format:"label BEGINSWITH %@","\(position) /")
         expectation(for:predicate,evaluatedWith:counter)
         waitForExpectations(timeout:8)
     }
+    @MainActor
     private func drag(_ app: XCUIApplication,dx: CGFloat,dy: CGFloat) {
         let photo = app.descendants(matching:.any).matching(identifier:"review.photo").firstMatch
         XCTAssertTrue(photo.isHittable)
