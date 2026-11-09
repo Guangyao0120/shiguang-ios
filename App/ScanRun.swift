@@ -9,6 +9,7 @@ final class ScanRun {
     let total: Int
     var updates: [MediaRecord] = []
     var handled = 0
+    var stopReason: String?
     var failures = 0
     var measurements = ScanMeasurements()
     let started = Date()

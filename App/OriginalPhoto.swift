@@ -95,7 +95,7 @@ struct OriginalPhotoView: View {
                 }
             }.navigationTitle("原图").navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("完成") { dismiss() } }
+                    ToolbarItem(placement: .cancellationAction) { Button("完成") { dismiss() }.accessibilityIdentifier("review.preview.close") }
                     ToolbarItem(placement: .primaryAction) {
                         Button(role: store.state.pending.contains(id) ? nil : .destructive) {
                             if store.state.pending.contains(id) { store.restore(id) } else { store.stage(id) }

@@ -7,6 +7,15 @@ enum PhotoAccess {
     static func image(id: String, size: CGSize = CGSize(width: 1000, height: 1000), highQuality: Bool = false) async -> UIImage? {
         await loader.image(id: id, size: size, highQuality: highQuality)
     }
+    static func delete(ids: Set<String>) async throws -> Set<String> {
+        let assets = PHAsset.fetchAssets(withLocalIdentifiers:Array(ids),options:nil)
+        var eligible: [PHAsset] = []
+        assets.enumerateObjects { asset,_,_ in if asset.canPerform(.delete) { eligible.append(asset) } }
+        guard !eligible.isEmpty else { return [] }
+        let deleting = eligible
+        try await PHPhotoLibrary.shared().performChanges { PHAssetChangeRequest.deleteAssets(deleting as NSArray) }
+        return Set(deleting.map(\.localIdentifier))
+    }
     static func clearCache() { loader.clear() }
 }
 

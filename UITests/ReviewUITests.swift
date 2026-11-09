@@ -29,7 +29,8 @@ final class ReviewUITests: XCTestCase {
         app.tabBars.buttons["整理"].tap(); app.tabBars.buttons["待删"].tap()
         XCTAssertEqual(app.buttons["pending.delete"].label,"删除所选 1 项")
         app.buttons["恢复所选 1 项"].tap()
-        XCTAssertEqual(selections.count,before-1)
+        let restored = NSPredicate { _,_ in selections.count == before-1 }
+        expectation(for:restored,evaluatedWith:app); waitForExpectations(timeout:8)
         XCTAssertFalse(app.buttons["pending.delete"].isEnabled)
         app.terminate()
     }
@@ -59,6 +60,9 @@ final class ReviewUITests: XCTestCase {
         assertPosition(1,counter:counter)
         drag(app,dx:-0.6,dy:0); assertPosition(2,counter:counter)
         checkControls(app) // Next page is a still image: same buttons/positions.
+        app.buttons["review.clear"].tap()
+        XCTAssertTrue(close.waitForExistence(timeout:10)); close.tap()
+        assertPosition(2,counter:counter)
         drag(app,dx:0.6,dy:0); assertPosition(1,counter:counter)
         drag(app,dx:0,dy:-0.6); assertPosition(2,counter:counter)
         app.buttons["review.undo"].tap(); assertPosition(1,counter:counter)

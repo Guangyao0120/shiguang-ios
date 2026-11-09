@@ -27,6 +27,7 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
     private var saveTask: Task<Bool, Never>?
     private var lastSaveTicket: UUID?
     private var activeScan: ScanRun?
+    private let deleteOverride: ((Set<String>) async throws -> Set<String>)?
     private let imageOverride: ((MediaRecord) async -> UIImage?)?
     private let analysisOverride: ((UIImage,MediaRecord) async throws -> AnalysisResult)?
     private var pendingSaveID: UUID?
@@ -46,10 +47,11 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
     var permitted: Bool { authorization == .authorized || authorization == .limited }
 
     init(storageURL: URL? = nil, images: ((MediaRecord) async -> UIImage?)? = nil,
-         analyze: ((UIImage,MediaRecord) async throws -> AnalysisResult)? = nil) {
+         analyze: ((UIImage,MediaRecord) async throws -> AnalysisResult)? = nil,
+         delete: ((Set<String>) async throws -> Set<String>)? = nil) {
         let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         disk = LibraryDisk(url: storageURL ?? folder.appendingPathComponent("library-v1.json"))
-        imageOverride = images; analysisOverride = analyze
+        imageOverride = images; analysisOverride = analyze; deleteOverride = delete
         super.init()
         for name in [UIApplication.didReceiveMemoryWarningNotification,UIApplication.protectedDataDidBecomeAvailableNotification] {
             observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
@@ -276,7 +278,8 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
                         run.failures += 1; updated.reasons = ["本次识别未完成，已保留旧结果，可稍后重试"]
                     }
                 } else {
-                    updated.unavailable = UIApplication.shared.applicationState == .active
+                    // A timeout or a temporary PhotoKit failure is retryable, not a permanent exclusion.
+                    updated.unavailable = false; run.failures += 1
                     updated.reasons = ["暂未读取到本地图片，可下载原件后重试"]
                 }
                 guard self.activeScan === run, !Task.isCancelled else { return }
@@ -289,7 +292,7 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
                     guard self.activeScan === run, !Task.isCancelled else { return }
                     lastCommit = Date()
                 }
-                if run.failures >= 3 { self.status = "连续识别失败，已暂停；已完成进度保留"; return }
+                if run.failures >= 3 { run.stopReason = "连续读取或识别失败，已暂停；已完成进度保留"; return }
                 ScanRuntime.shared.updateProgress(done:run.handled,total:todo.count)
                 if Date().timeIntervalSince(lastFeedback) >= 0.5 {
                     self.progress = Double(run.completedBefore + run.measurements.recognized)/Double(max(1,run.total))
@@ -315,7 +318,7 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
             let saved = await flushPendingSaves()
             if self.activeScan == nil && !self.busy {
                 if !saved { self.status = "保存失败；本次结果仍在内存中，请重试保存" }
-                else { self.status = completed ? "本批完成 · 已保存整理结果" : "已暂停 · 已完成结果已保存" }
+                else { self.status = run.stopReason ?? (completed ? "本批完成 · 已保存整理结果" : "已暂停 · 已完成结果已保存") }
             }
             run.completion?(completed && saved,run.handled)
         }
@@ -505,13 +508,11 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
         defer { busy = false; refreshIfNeeded() }
         pause(); save(immediately:true)
         guard await flushPendingSaves() else { message = "请先重试保存整理记录，再删除照片。"; return }
-        let assets = PHAsset.fetchAssets(withLocalIdentifiers:Array(ids),options:nil)
-        var eligible: [PHAsset] = []
-        assets.enumerateObjects { asset,_,_ in if asset.canPerform(.delete) { eligible.append(asset) } }
-        let actual = Set(eligible.map(\.localIdentifier))
-        guard !actual.isEmpty else { message = "所选照片当前无法由系统删除，待删记录已保留。"; metadataDirty = true; return }
         do {
-            try await PHPhotoLibrary.shared().performChanges { PHAssetChangeRequest.deleteAssets(eligible as NSArray) }
+            let actual: Set<String>
+            if let deleteOverride { actual = try await deleteOverride(ids).intersection(ids) }
+            else { actual = try await PhotoAccess.delete(ids:ids) }
+            guard !actual.isEmpty else { message = "所选照片当前无法由系统删除，待删记录已保留。"; metadataDirty = true; return }
             state.forget(actual); visibleIDs.subtract(actual)
             similar.removeAll { !$0.allSatisfy { state.records[$0] != nil } }
             save(immediately:true); _ = await flushPendingSaves(); metadataDirty = true

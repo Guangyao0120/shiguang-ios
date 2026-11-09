@@ -495,6 +495,50 @@ final class RulesTests: XCTestCase {
         XCTAssertEqual(PendingSelection.valid(["b"],pending:initial.pending,visible:["a","b"]),["b"])
     }
 
+    @MainActor
+    func testDeletionCancellationRetainsQueueAndSuccessOnlyRemovesConfirmedSelectedIDs() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        var cancel = true, submitted: Set<String> = []
+        let store = LibraryStore(storageURL:folder.appendingPathComponent("state.json"),delete:{ ids in
+            submitted = ids
+            if cancel { throw CancellationError() }
+            return ["a"] // Simulate a second selected asset that cannot be deleted.
+        })
+        var initial = LibraryState()
+        initial.records = ["a":media("a"),"b":media("b"),"c":media("c")]
+        initial.pending = ["a","b","c"]; store.seedForTesting(initial)
+        await store.deletePending(selected:["a","b","unknown"])
+        XCTAssertEqual(submitted,["a","b"])
+        XCTAssertEqual(store.state.pending,["a","b","c"])
+        XCTAssertEqual(store.state.records.count,3)
+        cancel = false
+        await store.deletePending(selected:["a","b"])
+        XCTAssertEqual(store.state.pending,["b","c"])
+        XCTAssertNil(store.state.records["a"]); XCTAssertNotNil(store.state.records["b"])
+        let reopened = try await LibraryDisk(url:folder.appendingPathComponent("state.json")).load()
+        XCTAssertEqual(reopened.pending,["b","c"])
+    }
+
+    @MainActor
+    func testConsecutiveReadFailuresStopWithoutErasingPreviouslyCompletedResults() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let stopped = expectation(description:"failed reads checkpointed")
+        let store = LibraryStore(storageURL:folder.appendingPathComponent("state.json"),images:{ _ in nil })
+        var initial = LibraryState(); var done = media("done"); done.analyzed = true; done.text = "keep"
+        initial.records["done"] = done
+        for i in 0..<10 { initial.records["pending-\(i)"] = media("pending-\(i)",Double(i+1)) }
+        store.seedForTesting(initial)
+        store.scan(screenshotsOnly:false,limit:100) { success,count in
+            XCTAssertFalse(success); XCTAssertEqual(count,3); stopped.fulfill()
+        }
+        await fulfillment(of:[stopped],timeout:5)
+        XCTAssertFalse(store.scanning)
+        XCTAssertEqual(store.state.records["done"]?.text,"keep")
+        XCTAssertEqual(ScanPolicy.candidates(Array(store.state.records.values),screenshotsOnly:false).count,10)
+        let reopened = try await LibraryDisk(url:folder.appendingPathComponent("state.json")).load()
+        XCTAssertEqual(reopened.records.count,11); XCTAssertTrue(reopened.records["done"]!.analyzed)
+    }
+
     private func media(_ id: String, _ seconds: TimeInterval = 0,
                        lat: Double? = nil, lon: Double? = nil) -> MediaRecord {
         MediaRecord(id: id, date: Date(timeIntervalSince1970: 1_700_000_000 + seconds),
