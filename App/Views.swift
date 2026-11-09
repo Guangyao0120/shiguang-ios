@@ -9,9 +9,12 @@ struct RootView: View {
     @EnvironmentObject var store: LibraryStore
     @Environment(\.scenePhase) private var phase
     @State private var selectedTab = DesignPreview.tab
+    @AppStorage("onboardingComplete") private var onboardingComplete = false
     var body: some View {
         Group {
-            if store.permitted {
+            if !onboardingComplete && (store.authorization == .notDetermined || UserDefaults.standard.bool(forKey: "onboardingInProgress")) && !DesignPreview.enabled {
+                WelcomeView()
+            } else if store.permitted {
                 if !store.loaded {
                     VStack(spacing: 18) {
                         ProgressView()
@@ -53,7 +56,7 @@ struct RootView: View {
                 }.padding(32).frame(maxWidth: .infinity, maxHeight: .infinity).background(canvas)
             }
         }
-        .task { await store.start() }
+        .task { if store.authorization == .notDetermined { UserDefaults.standard.set(true,forKey:"onboardingInProgress") }; await store.start() }
 
         .onChange(of: phase) { _, newValue in
             if newValue == .active { ScanRuntime.shared.enterForeground(); store.refreshIfNeeded() }
@@ -90,13 +93,13 @@ struct HomeView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("留住喜欢的").font(.system(size: 30, weight: .medium, design: .serif))
-                        Text("\(store.visibleActive.count.formatted()) 项收藏").font(.subheadline).foregroundStyle(Palette.secondary)
+                        Text(L.f("%d 项收藏",store.visibleActive.count)).font(.subheadline).foregroundStyle(Palette.secondary)
                     }
                     Spacer()
                     Image(systemName: "leaf").font(.system(size: 34, weight: .ultraLight)).foregroundStyle(Palette.accent)
                 }
                 VStack(alignment: .leading, spacing: 10) {
-                    Label(store.status, systemImage: store.scanning ? "viewfinder" : "checkmark.circle")
+                    Label(L.status(store.status), systemImage: store.scanning ? "viewfinder" : "checkmark.circle")
                         .font(.subheadline).foregroundStyle(Palette.secondary).lineLimit(2)
                     if store.scanning { ProgressView(value: store.progress) }
                     HStack {
@@ -127,11 +130,11 @@ struct HomeView: View {
                     Text("分类").font(.title3.weight(.medium))
                     LazyVGrid(columns: columns, spacing: 12) {
                         ForEach(PhotoTag.allCases) { tag in
-                            NavigationLink { CollectionView(title: tag.rawValue, scope: .tag(tag)) } label: {
+                            NavigationLink { CollectionView(title: tag.title, scope: .tag(tag)) } label: {
                                 VStack(alignment: .leading, spacing: 14) {
                                     Image(systemName: tag.icon).font(.title2).foregroundStyle(.tint)
                                     HStack {
-                                        Text(tag.rawValue).foregroundStyle(.primary)
+                                        Text(tag.title).foregroundStyle(.primary)
                                         Spacer()
                                         Text("\(store.index.byTag[tag]?.count ?? 0)").foregroundStyle(Palette.secondary)
                                     }.font(.subheadline.weight(.medium))
@@ -411,7 +414,7 @@ struct DetailView: View {
                             Button {
                                 store.setTag(id, tag, enabled: !record.effectiveTags.contains(tag))
                             } label: {
-                                Text(tag.rawValue).font(.caption).padding(10).frame(maxWidth: .infinity)
+                                Text(tag.title).font(.caption).padding(10).frame(maxWidth: .infinity)
                                     .background(record.effectiveTags.contains(tag) ? Color.accentColor.opacity(0.18) : .gray.opacity(0.1), in: Capsule())
                             }.buttonStyle(.plain)
                         }

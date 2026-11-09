@@ -45,6 +45,7 @@ final class ScanRuntime: NSObject, ObservableObject, UNUserNotificationCenterDel
     }
     private var scheduledScope = true
     private var continuedRegistered = false
+    private var lastProgress = Date.distantPast
     private var backgroundEnabled: Bool { defaults.object(forKey: "backgroundEnabled") as? Bool ?? true }
     private var noticesEnabled: Bool { defaults.object(forKey: "completionNotice") as? Bool ?? true }
     private var identifiers: [String] { Bundle.main.object(forInfoDictionaryKey: "BGTaskSchedulerPermittedIdentifiers") as? [String] ?? [] }
@@ -93,12 +94,19 @@ final class ScanRuntime: NSObject, ObservableObject, UNUserNotificationCenterDel
         launching = false
         guard activeRun != nil, store.scanning else { return }
         if noticesEnabled { Task { await requestNotificationPermission() } }
+        let run = activeRun
+        Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            if self.activeRun == run, let run, self.store?.scanning == true, self.continued == nil {
+                SortActivityController.shared.start(run: run)
+            }
+        }
         guard backgroundEnabled else { return }
         if let submitBackgroundOverride {
             do { try submitBackgroundOverride(); note = "已申请持续后台整理" }
             catch { note = "前台整理已开始，后台暂未获批准" }
         } else if #available(iOS 26.0, *), continuedRegistered {
-                let request = BGContinuedProcessingTaskRequest(identifier: continuedID, title: "拾光正在整理照片", subtitle: "本机识别，不上传图片")
+                let request = BGContinuedProcessingTaskRequest(identifier: continuedID, title: L.t("时光在整理您的照片"), subtitle: L.t("本机识别，不上传图片"))
                 request.strategy = .fail
                 do { try BGTaskScheduler.shared.submit(request); note = "已申请持续后台整理" }
                 catch { note = "前台整理已开始，后台暂未获批准" }
@@ -113,13 +121,14 @@ final class ScanRuntime: NSObject, ObservableObject, UNUserNotificationCenterDel
         // Attach background runtime to the existing foreground scan. Never
         // launch a second scan from a delayed callback.
         continued = task
+        SortActivityController.shared.end()
         endLease()
         task.expirationHandler = { Task { @MainActor in ScanRuntime.shared.expired() } }
         task.progress.totalUnitCount = 100
         task.progress.completedUnitCount = 0
     }
     private func runScheduled(_ task: BGTask) {
-        guard backgroundEnabled, !userPaused, let store else { task.setTaskCompleted(success: false); return }
+        guard backgroundEnabled, !userPaused, activeRun == nil, continued == nil, let store, !store.scanning else { task.setTaskCompleted(success: false); return }
         task.expirationHandler = { Task { @MainActor in ScanRuntime.shared.expired() } }
         continued = task; userPaused = false
         Task {
@@ -136,6 +145,7 @@ final class ScanRuntime: NSObject, ObservableObject, UNUserNotificationCenterDel
         store.scan(screenshotsOnly: scope, limit: limit) { [weak self] finished, count in
             guard let self, self.activeRun == run else { return }
             self.activeRun = nil
+            SortActivityController.shared.end()
             self.continued?.setTaskCompleted(success: finished)
             self.continued = nil; self.endLease()
             BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: self.continuedID)
@@ -145,13 +155,17 @@ final class ScanRuntime: NSObject, ObservableObject, UNUserNotificationCenterDel
         }
     }
     func updateProgress(done: Int, total: Int) {
+        SortActivityController.shared.update(done: done,total: total)
+        guard Date().timeIntervalSince(lastProgress) >= 1 || done == total else { return }
+        lastProgress = Date()
         if #available(iOS 26.0, *), let task = continued as? BGContinuedProcessingTask {
             task.progress.totalUnitCount = Int64(total)
             task.progress.completedUnitCount = Int64(done)
-            task.updateTitle("拾光正在整理照片", subtitle: "\(done)/\(total)")
+            task.updateTitle(L.t("时光在整理您的照片"), subtitle: "\(done)/\(total)")
         }
     }
     func pause() {
+        SortActivityController.shared.end()
         userPaused = true
         BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: resumeID)
         if continued == nil { BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: continuedID) }
@@ -218,7 +232,10 @@ final class ScanRuntime: NSObject, ObservableObject, UNUserNotificationCenterDel
 
 struct AlbumSettingsView: View {
     @EnvironmentObject var store: LibraryStore
+    @AppStorage("appLanguage") private var language = AppLanguage.system.rawValue
+    @State private var showingWelcome = false
     @AppStorage("appearance") private var appearance = AlbumAppearance.system.rawValue
+    @AppStorage("liveActivityEnabled") private var liveActivity = true
     @AppStorage("backgroundEnabled") private var background = true
     @AppStorage("completionNotice") private var notifications = true
     @AppStorage("screenshotsOnly") private var screenshots = true
@@ -227,9 +244,14 @@ struct AlbumSettingsView: View {
     @State private var notificationStatus = ""
     var body: some View {
         Form {
+            Section("语言") {
+                Picker("App 语言", selection: $language) {
+                    ForEach(AppLanguage.allCases) { Text($0.title).tag($0.rawValue) }
+                }
+            }
             Section("外观") {
                 Picker("显示模式", selection: $appearance) {
-                    ForEach(AlbumAppearance.allCases) { Text($0.title).tag($0.rawValue) }
+                    ForEach(AlbumAppearance.allCases) { Text(L.t($0.title)).tag($0.rawValue) }
                 }
             }
             Section {
@@ -239,6 +261,7 @@ struct AlbumSettingsView: View {
                 if !runtime.note.isEmpty { Text(runtime.note).font(.footnote).foregroundStyle(Palette.secondary) }
             } header: { Text("整理") } footer: { Text("后台执行由 iOS 调度；锁定、强制关闭或系统资源不足时可能暂停，已完成进度会保留。") }
             Section {
+                Toggle("灵动岛整理进度", isOn: $liveActivity).onChange(of: liveActivity) { _, enabled in if !enabled { SortActivityController.shared.end() } }
                 Toggle("整理完成通知", isOn: $notifications).onChange(of: notifications) { _, enabled in
                     if enabled { Task { await runtime.requestNotificationPermission(); await refreshNotificationStatus() } }
                 }
@@ -250,6 +273,7 @@ struct AlbumSettingsView: View {
                 Button("清理图片缓存") { PhotoAccess.clearCache(); store.message = "图片缓存已清理，原图与标签保留。" }
                 NavigationLink("DeepSeek 设置") { AISettingsView() }
                 NavigationLink("使用说明") { AlbumHelpView() }
+                Button("重新查看入门引导") { showingWelcome = true }
             }
             Section("关于") {
                 LabeledContent("版本", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")
@@ -259,6 +283,7 @@ struct AlbumSettingsView: View {
         }.paperList().navigationTitle("设置").navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .tabBar)
             .task { await refreshNotificationStatus() }
+            .sheet(isPresented: $showingWelcome) { NavigationStack { WelcomeView().toolbar { Button("完成") { showingWelcome = false } } } }
     }
     private func refreshNotificationStatus() async {
         let settings = await UNUserNotificationCenter.current().notificationSettings()

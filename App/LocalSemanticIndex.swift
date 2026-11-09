@@ -166,7 +166,7 @@ actor LocalSemanticIndex {
             let scale = min(224/source.extent.width, 224/source.extent.height)
             let resized = source.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
             let positioned = resized.transformed(by: CGAffineTransform(translationX: (224-resized.extent.width)/2, y: (224-resized.extent.height)/2))
-            let background = CIImage(color: CIColor(red: .48145466, green: .4578275, blue: .40821073)).cropped(to: CGRect(x: 0,y: 0,width: 224,height: 224))
+            let background = CIImage(color: CIColor(red: 0.48145466, green: 0.4578275, blue: 0.40821073)).cropped(to: CGRect(x: 0,y: 0,width: 224,height: 224))
             var buffer: CVPixelBuffer?
             guard CVPixelBufferCreate(kCFAllocatorDefault, 224, 224, kCVPixelFormatType_32BGRA,
                 [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &buffer) == kCVReturnSuccess, let buffer else { throw SemanticError.invalidVector }
