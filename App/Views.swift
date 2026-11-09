@@ -1,5 +1,6 @@
 import SwiftUI
 import Photos
+import PhotosUI
 import AVKit
 
 private let canvas = Color(red: 0.96, green: 0.95, blue: 0.92)
@@ -537,3 +538,4 @@ struct SimilarView: View {
         }.background(canvas).navigationTitle("相似照片")
     }
 }
+
