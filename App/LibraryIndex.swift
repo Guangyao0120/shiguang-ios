@@ -24,6 +24,7 @@ struct LibraryIndex {
             for id in trip.members where visible.contains(id) { tripsByMedia[id, default: []].append((trip.id, trip.name)) }
         }
         var keywordNames: [String: String] = [:]
+        for name in TagNames.normalized(state.customTagNames ?? []) { keywordNames[name.lowercased()] = name }
         for record in index.records {
             if Task.isCancelled { return LibraryIndex() }
             let tags = record.effectiveTags
@@ -31,7 +32,11 @@ struct LibraryIndex {
             let personNames = record.people.compactMap { people[$0] }.sorted()
             let tripNames = (tripsByMedia[record.id] ?? []).map { $0.1 }.sorted()
             index.labels[record.id] = TagNames.normalized(record.customTags + personNames + tripNames + categories.map(\.rawValue))
-            index.search[record.id] = ([record.text, record.aiSummary ?? "", record.voiceTranscript ?? "", record.videoTitle ?? ""] + record.customTags + personNames + tripNames + categories.map(\.rawValue)).joined(separator: " ").lowercased()
+            var searchable = [record.text, record.aiSummary ?? "", record.voiceTranscript ?? "", record.videoTitle ?? ""]
+            searchable += record.customTags
+            searchable += personNames + tripNames
+            searchable += categories.map(\.rawValue)
+            index.search[record.id] = searchable.joined(separator: " ").lowercased()
             if state.pending.contains(record.id) { index.pending.append(record); continue }
             index.active.append(record)
             for tag in categories { index.byTag[tag, default: []].append(record) }

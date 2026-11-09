@@ -10,6 +10,7 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
     @Published var scanning = false
     @Published var refreshing = false
     @Published var loaded = false
+    @Published var detailLayers = 0
     @Published var busy = false
     @Published var progress = 0.0
     @Published var status = "读取整理记录…"
@@ -51,6 +52,7 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
                 }
             })
         }
+        ScanRuntime.shared.store = self
     }
 
     func start() async {
@@ -178,15 +180,25 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
         }
     }
 
-    func scan(screenshotsOnly: Bool = true) {
-        guard !scanning, !busy, !refreshing, loaded, permitted else { return }
-        let todo = ScanPolicy.candidates(records.compactMap { state.records[$0.id] }, screenshotsOnly: screenshotsOnly)
-        guard !todo.isEmpty else { status = "暂无待识别的\(screenshotsOnly ? "截图" : "图片")"; return }
+    func prepareForBackgroundScan() async {
+        await start()
+        await refreshTask?.value
+        await indexTask?.value
+    }
+    func scan(screenshotsOnly: Bool = true, limit: Int = 100, onFinish: ((Bool, Int) -> Void)? = nil) {
+        guard !scanning, !busy, !refreshing, loaded, permitted else { onFinish?(false, 0); return }
+        let todo = ScanPolicy.candidates(records.compactMap { state.records[$0.id] }, screenshotsOnly: screenshotsOnly, limit: limit)
+        guard !todo.isEmpty else { status = "暂无待识别的\(screenshotsOnly ? "截图" : "图片")"; onFinish?(true, 0); return }
         scanning = true; progress = 0
         scanTask = Task { [weak self] in
             guard let self else { return }
             var updates: [MediaRecord] = []
-            defer { self.commitAnalysis(updates); self.scanning = false; self.save(immediately: true) }
+            var handled = 0
+            defer {
+                self.commitAnalysis(updates); self.scanning = false; self.save(immediately: true)
+                let finished = !Task.isCancelled, count = handled, saving = self.saveTask
+                Task { await saving?.value; onFinish?(finished, count) }
+            }
             for (position, record) in todo.enumerated() {
                 if Task.isCancelled { return }
                 var updated = record
@@ -194,7 +206,7 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
                 guard !Task.isCancelled else { return }
                 if let image {
                     do {
-                        let result = try await LocalAnalyzer.analyze(image, screenshot: record.isScreenshot, video: false)
+                        let result = try await LocalAnalyzer.analyze(image, screenshot: record.isScreenshot, video: false, cpuOnly: UIApplication.shared.applicationState != .active)
                         guard !Task.isCancelled else { return }
                         updated.tags = result.tags; updated.text = String(result.text.prefix(4000))
                         updated.reasons = result.reasons; updated.hash = result.hash
@@ -202,8 +214,10 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
                     } catch { updated.reasons = ["本次识别失败，下次可重试"] }
                 } else { updated.unavailable = true }
                 updates.append(updated)
+                handled += 1
                 if updates.count >= 5 { self.commitAnalysis(updates); updates.removeAll(keepingCapacity: true); self.save() }
                 self.progress = Double(position + 1) / Double(todo.count)
+                ScanRuntime.shared.updateProgress(done: position + 1, total: todo.count)
                 self.status = "正在整理 · \(position + 1)/\(todo.count)"
                 do { try await Task.sleep(nanoseconds: 100_000_000) } catch { return }
             }
@@ -244,6 +258,11 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
     func addKeywords(_ id: String, input: String) {
         let values = input.components(separatedBy: CharacterSet(charactersIn: ",，、;；\n"))
         state.records[id]?.keywords = TagNames.normalized((state.records[id]?.keywords ?? []) + values)
+        save()
+    }
+    func createCustomTag(_ input: String) {
+        let names = input.components(separatedBy: CharacterSet(charactersIn: ",，、;；\n"))
+        state.customTagNames = TagNames.normalized((state.customTagNames ?? []) + names)
         save()
     }
     func removeKeyword(_ id: String, keyword: String) {

@@ -19,18 +19,13 @@ struct RootView: View {
                         
                     }.padding(28).frame(maxWidth: .infinity, maxHeight: .infinity).background(canvas)
                 } else {
-                TabView(selection: $selectedTab) {
-                    NavigationStack { HomeView() }.toolbar(.hidden, for: .tabBar).tabItem { Label("整理", systemImage: "square.grid.2x2") }.tag(0)
-                    NavigationStack { TripsView() }.toolbar(.hidden, for: .tabBar).tabItem { Label("出游", systemImage: "map") }.tag(1)
-                    NavigationStack { PeopleView() }.toolbar(.hidden, for: .tabBar).tabItem { Label("人物", systemImage: "person.2") }.tag(2)
-                    NavigationStack { PendingView() }.toolbar(.hidden, for: .tabBar).tabItem { Label("待删", systemImage: "trash") }
-                        .badge(store.visiblePending.count)
-                        .tag(3)
-                    NavigationStack { AIOrganizeView() }.toolbar(.hidden, for: .tabBar).tabItem { Label("AI", systemImage: "sparkles") }.tag(4)
-                }
-                .toolbar(.hidden, for: .tabBar)
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    GlassTabBar(selection: $selectedTab, pendingCount: store.visiblePending.count)
+                if #available(iOS 26.0, *) {
+                    navigationTabs
+                } else {
+                    navigationTabs.toolbar(.hidden, for: .tabBar)
+                        .safeAreaInset(edge: .bottom, spacing: 0) {
+                            if store.detailLayers == 0 { GlassTabBar(selection: $selectedTab, pendingCount: store.visiblePending.count) }
+                        }
                 }
                 }
             } else {
@@ -53,14 +48,23 @@ struct RootView: View {
             }
         }
         .task { await store.start() }
-        .onChange(of: selectedTab) { _, _ in store.pause() }
+
         .onChange(of: phase) { _, newValue in
             if newValue == .active { store.refreshIfNeeded() }
-            if newValue == .background { store.pause(); store.save(immediately: true); PhotoAccess.clearCache() }
+            if newValue == .background { ScanRuntime.shared.enterBackground(); store.save(immediately: true); PhotoAccess.clearCache() }
         }
         .alert("拾光", isPresented: Binding(get: { store.message != nil }, set: { if !$0 { store.message = nil } })) {
             Button("知道了", role: .cancel) { store.message = nil }
         } message: { Text(store.message ?? "") }
+    }
+    private var navigationTabs: some View {
+        TabView(selection: $selectedTab) {
+            NavigationStack { HomeView() }.tabItem { Label("整理", systemImage: "square.grid.2x2") }.tag(0)
+            NavigationStack { TripsView() }.tabItem { Label("出游", systemImage: "map") }.tag(1)
+            NavigationStack { PeopleView() }.tabItem { Label("人物", systemImage: "person.2") }.tag(2)
+            NavigationStack { PendingView() }.tabItem { Label("待删", systemImage: "trash") }.badge(store.visiblePending.count).tag(3)
+            NavigationStack { AIOrganizeView() }.tabItem { Label("AI", systemImage: "sparkles") }.tag(4)
+        }
     }
 }
 
@@ -69,6 +73,9 @@ struct HomeView: View {
     @State private var query = ""
     @State private var searchResults: [MediaRecord] = []
     @State private var showingHelp = false
+    @State private var creatingTag = false
+    @State private var tagName = ""
+    @AppStorage("screenshotsOnly") private var screenshotsOnly = true
     private let columns = [GridItem(.flexible()), GridItem(.flexible())]
     var body: some View {
         ScrollView {
@@ -86,12 +93,12 @@ struct HomeView: View {
                         .font(.subheadline).foregroundStyle(Palette.secondary).lineLimit(2)
                     if store.scanning { ProgressView(value: store.progress) }
                     HStack {
-                        Button(store.scanning ? "暂停" : "整理截图") {
-                            if store.scanning { store.pause() } else { store.scan() }
+                        Button(store.scanning ? "暂停" : (screenshotsOnly ? "整理截图" : "开始整理")) {
+                            if store.scanning { ScanRuntime.shared.pause() } else { ScanRuntime.shared.start() }
                         }.buttonStyle(QuietPrimaryButtonStyle()).disabled(store.busy || store.refreshing || !store.loaded)
                         Menu("更多") {
                             Button("刷新相册") { store.refresh() }
-                            Button("整理所有图片 · 每批100张") { store.scan(screenshotsOnly: false) }
+                            Button("整理所有图片") { ScanRuntime.shared.start(screenshotsOnly: false) }
                             Button("使用说明", systemImage: "info.circle") { showingHelp = true }
                         }.disabled(store.scanning || store.busy || store.refreshing || !store.loaded)
                     }
@@ -125,8 +132,13 @@ struct HomeView: View {
                     NavigationLink { SimilarView() } label: {
                         Label("相似照片 · \(store.similar.count) 组", systemImage: "square.on.square")
                     }
-                    if !store.allKeywords.isEmpty {
-                        Text("我的标签").font(.title3.bold())
+                    Group {
+                        HStack {
+                            Text("自定义分类").font(.title3.weight(.medium))
+                            Spacer()
+                            Button { tagName = ""; creatingTag = true } label: { Image(systemName: "plus") }
+                                .accessibilityLabel("新建自定义分类")
+                        }
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 90))]) {
                             ForEach(store.allKeywords, id: \.self) { keyword in
                                 NavigationLink { CollectionView(title: "#" + keyword, scope: .keyword(keyword)) } label: {
@@ -142,6 +154,12 @@ struct HomeView: View {
         }.background(canvas).navigationTitle("拾光").navigationBarTitleDisplayMode(.inline)
             .searchable(text: $query, prompt: "搜索照片与标签")
             .sheet(isPresented: $showingHelp) { AlbumHelpView() }
+            .toolbar { NavigationLink { AlbumSettingsView() } label: { Image(systemName: "gearshape") }.accessibilityLabel("设置") }
+            .alert("自定义分类", isPresented: $creatingTag) {
+                TextField("例如：工作、待买、纪念", text: $tagName)
+                Button("创建") { store.createCustomTag(tagName) }
+                Button("取消", role: .cancel) { }
+            }
             .task(id: "\(store.indexVersion):\(query)") {
                 guard !query.isEmpty else { searchResults = []; return }
                 do { try await Task.sleep(nanoseconds: 250_000_000) } catch { return }
@@ -297,14 +315,32 @@ struct DetailView: View {
     @State private var loadingVideo = false
     @State private var showingAI = false
     @State private var showingVideoTools = false
+    @State private var showingOriginal = false
     @State private var keywordInput = ""
     var record: MediaRecord? { store.state.records[id] }
     var body: some View {
         ScrollView {
             if let record {
                 VStack(alignment: .leading, spacing: 20) {
+                    HStack {
+                        Text(record.date.formatted(date: .abbreviated, time: .omitted)).foregroundStyle(Palette.secondary)
+                        Spacer()
+                        Button(role: store.state.pending.contains(id) ? nil : .destructive) {
+                            if store.state.pending.contains(id) { store.restore(id) } else { store.stage(id) }
+                        } label: {
+                            Label(store.state.pending.contains(id) ? "恢复" : "移入待删", systemImage: store.state.pending.contains(id) ? "arrow.uturn.backward" : "trash")
+                        }.buttonStyle(.bordered)
+                    }
                     if let player { VideoPlayer(player: player).frame(height: 340) }
-                    else { Thumbnail(id: id, fit: true, resolution: 1000).frame(height: 340).clipped() }
+                    else {
+                        Button { if record.isVideo { loadVideo() } else { showingOriginal = true } } label: {
+                            Thumbnail(id: id, fit: true, resolution: 1000).frame(height: 340).clipped()
+                                .overlay(alignment: .bottomTrailing) {
+                                    Label(record.isVideo ? "播放" : "查看清晰原图", systemImage: record.isVideo ? "play.fill" : "arrow.up.left.and.arrow.down.right")
+                                        .font(.caption.weight(.medium)).padding(10).background(.regularMaterial, in: Capsule()).padding(10)
+                                }
+                        }.buttonStyle(.plain)
+                    }
                     if record.isVideo {
                         Button(loadingVideo ? "正在读取本地视频…" : "播放本地视频") { loadVideo() }.disabled(loadingVideo)
                         if let title = record.videoTitle { Text(title).font(.title3.weight(.medium)) }
@@ -319,14 +355,14 @@ struct DetailView: View {
                         Label("请先在苹果照片中下载原件", systemImage: "icloud.slash")
                             .font(.footnote)
                     }
-                    Text("照片标签").font(.headline)
+                    Text("自定义标签").font(.headline)
                     Text(store.tagLabels(for: record).map { "#" + $0 }.joined(separator: "  "))
                         .font(.subheadline).foregroundStyle(.tint).textSelection(.enabled)
                     HStack {
                         TextField("添加标签，例如：夜景、聚餐", text: $keywordInput)
                             .textFieldStyle(.roundedBorder).submitLabel(.done)
-                            .onSubmit { store.addKeywords(id, input: keywordInput); keywordInput = "" }
-                        Button("添加") { store.addKeywords(id, input: keywordInput); keywordInput = "" }
+                            .onSubmit { store.createCustomTag(keywordInput); store.addKeywords(id, input: keywordInput); keywordInput = "" }
+                        Button("添加") { store.createCustomTag(keywordInput); store.addKeywords(id, input: keywordInput); keywordInput = "" }
                             .disabled(keywordInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                     
@@ -338,7 +374,22 @@ struct DetailView: View {
                             }.buttonStyle(.plain).accessibilityLabel("移除标签 " + keyword)
                         }
                     }
-                    Text("分类标签").font(.headline)
+                    if !store.allKeywords.isEmpty {
+                        DisclosureGroup("已有自定义分类") {
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 90))]) {
+                                ForEach(store.allKeywords, id: \.self) { name in
+                                    Button {
+                                        if record.customTags.contains(name) { store.removeKeyword(id, keyword: name) }
+                                        else { store.addKeywords(id, input: name) }
+                                    } label: {
+                                        Label(name, systemImage: record.customTags.contains(name) ? "checkmark.circle.fill" : "circle")
+                                            .font(.caption).padding(8)
+                                    }.buttonStyle(.bordered)
+                                }
+                            }
+                        }
+                    }
+                    Text("系统分类").font(.headline)
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 100))]) {
                         ForEach(PhotoTag.allCases) { tag in
                             Button {
@@ -368,17 +419,17 @@ struct DetailView: View {
                             Text(record.text.isEmpty ? "没有识别到文字" : record.text).textSelection(.enabled)
                         }.font(.footnote).frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    Button(role: store.state.pending.contains(id) ? nil : .destructive) {
-                        if store.state.pending.contains(id) { store.restore(id) } else { store.stage(id) }
-                    } label: {
-                        Label(store.state.pending.contains(id) ? "从待删区恢复" : "移入待删区", systemImage: "trash")
-                    }.buttonStyle(.bordered)
+
                 }.padding()
             } else { ContentUnavailableView("照片已移除", systemImage: "photo") }
         }.background(canvas).navigationTitle("照片详情").navigationBarTitleDisplayMode(.inline)
-            .onDisappear { player?.pause() }
+            .safeAreaPadding(.bottom, 24)
+            .toolbar(.hidden, for: .tabBar)
+            .onAppear { store.detailLayers += 1 }
+            .onDisappear { player?.pause(); store.detailLayers = max(0, store.detailLayers - 1) }
             .sheet(isPresented: $showingAI) { AIPhotoView(id: id) }
             .sheet(isPresented: $showingVideoTools) { VideoOrganizeView(id: id) }
+            .fullScreenCover(isPresented: $showingOriginal) { OriginalPhotoView(id: id) }
     }
     private func loadVideo() {
         guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil).firstObject else { return }

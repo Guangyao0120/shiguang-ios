@@ -12,7 +12,7 @@ struct AnalysisResult {
 enum LocalAnalyzer {
     private static let queue = DispatchQueue(label: "shiguang.vision", qos: .utility)
 
-    static func analyze(_ image: UIImage, screenshot: Bool, video: Bool) async throws -> AnalysisResult {
+    static func analyze(_ image: UIImage, screenshot: Bool, video: Bool, cpuOnly: Bool = false) async throws -> AnalysisResult {
         try await withCheckedThrowingContinuation { continuation in
             queue.async {
                 autoreleasepool {
@@ -20,6 +20,7 @@ enum LocalAnalyzer {
                         guard let cg = image.cgImage else { throw AnalyzerError.invalidImage }
                         let faces = VNDetectFaceRectanglesRequest()
                         let classification = VNClassifyImageRequest()
+                        faces.usesCPUOnly = cpuOnly; classification.usesCPUOnly = cpuOnly
                         let handler = VNImageRequestHandler(cgImage: cg, options: [:])
                         try handler.perform([faces, classification])
                         let labels = (classification.results ?? []).filter { $0.confidence >= 0.2 }
@@ -29,6 +30,7 @@ enum LocalAnalyzer {
                         // document-like photos keep accurate Chinese OCR.
                         if screenshot || labels.contains(where: { $0.contains("document") || $0.contains("receipt") || $0.contains("text") }) {
                             let textRequest = VNRecognizeTextRequest()
+                            textRequest.usesCPUOnly = cpuOnly
                             textRequest.recognitionLevel = .accurate
                             textRequest.recognitionLanguages = ["zh-Hans", "en-US"]
                             textRequest.usesLanguageCorrection = false

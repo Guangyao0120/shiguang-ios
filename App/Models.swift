@@ -83,6 +83,7 @@ struct Trip: Codable, Identifiable {
 
 struct LibraryState: Codable {
     var similarPairs: [[String]]?
+    var customTagNames: [String]?
     var records: [String: MediaRecord] = [:]
     var people: [NamedPerson] = []
     var trips: [Trip] = []

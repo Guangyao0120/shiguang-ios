@@ -6,8 +6,10 @@
 <key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
 <key>CFBundleName</key><string>$(PRODUCT_NAME)</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.6.0</string>
-<key>CFBundleVersion</key><string>6</string>
+<key>CFBundleShortVersionString</key><string>0.7.0</string>
+<key>CFBundleVersion</key><string>7</string>
+<key>UIBackgroundModes</key><array><string>processing</string></array>
+<key>BGTaskSchedulerPermittedIdentifiers</key><array><string>$(PRODUCT_BUNDLE_IDENTIFIER).organize</string><string>$(PRODUCT_BUNDLE_IDENTIFIER).resume</string></array>
 <key>NSSpeechRecognitionUsageDescription</key><string>将你选择的视频语音在本机转成文字，生成可修改的标题。音频不上传，是否发送文字给 DeepSeek 由你确认。</string>
 <key>CADisableMinimumFrameDurationOnPhone</key><true/>
 <key>LSRequiresIPhoneOS</key><true/>
