@@ -2,7 +2,7 @@ import XCTest
 import CoreGraphics
 
 final class ReviewUITests: XCTestCase {
-    override func setUpWithError() throws { continueAfterFailure = false }
+    override func setUpWithError() throws { continueAfterFailure = false; executionTimeAllowance = 120 }
     @MainActor
     func testHomePortraitReviewUsesTheSameControlsAndGestures() { checkRoute(tab:"整理",entry:"collection.tag.人像",prefix:false) }
     @MainActor

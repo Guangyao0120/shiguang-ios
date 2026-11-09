@@ -159,10 +159,13 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
             let snapshot = self.state, version = self.revision
             do {
                 try await self.disk.write(snapshot, revision: version)
-                self.saveError = nil; return true
+                if self.lastSaveTicket == ticket { self.saveError = nil }
+                return true
             } catch {
-                self.saveError = error.localizedDescription
-                self.message = "整理记录保存失败；本次结果仍保留在内存中，可重试保存。"
+                if self.lastSaveTicket == ticket {
+                    self.saveError = error.localizedDescription
+                    self.message = "整理记录保存失败；本次结果仍保留在内存中，可重试保存。"
+                }
                 return false
             }
         }

@@ -4,6 +4,7 @@ import UIKit
 @testable import Shiguang
 
 final class RulesTests: XCTestCase {
+    override func setUpWithError() throws { executionTimeAllowance = 60 }
     func testLegacySceneryRefinesOnceWithoutRepeatingCompletedOCR() {
         var old = media("old"); old.tags = [.scenery]; old.analyzed = true; old.text = "Keep OCR"
         let unprocessed = media("new")
