@@ -47,13 +47,13 @@ jobs:
           PROJECT=$(find "$GITHUB_WORKSPACE" -name Shiguang.xcodeproj -type d -print -quit)
           test -n "$PROJECT"
           echo "SHIGUANG_PROJECT=$PROJECT" >> "$GITHUB_ENV"
-      - name: Prepare fresh simulator
-        timeout-minutes: 8
-        run: python3 scripts/boot_test_simulator.py
       - name: Build for generic simulator
         run: |
           set -o pipefail
           xcodebuild -project "$SHIGUANG_PROJECT" -scheme Shiguang -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath "$RUNNER_TEMP/ShiguangBuild" CODE_SIGNING_ALLOWED=NO build 2>&1 | tee "$RUNNER_TEMP/build.log"
+      - name: Prepare fresh simulator
+        timeout-minutes: 12
+        run: python3 scripts/boot_test_simulator.py
       - name: Run unit tests on available iPhone
         timeout-minutes: 25
         env:

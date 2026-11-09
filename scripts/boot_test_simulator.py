@@ -1,6 +1,15 @@
 import json,os,subprocess
 
-def run(*args,timeout=60):return subprocess.run(args,check=True,capture_output=True,text=True,timeout=timeout).stdout
+def run(*args,timeout=90):
+    for attempt in range(2):
+        try:
+            return subprocess.run(args,check=True,capture_output=True,text=True,timeout=timeout).stdout
+        except subprocess.TimeoutExpired:
+            if attempt: raise
+            print('Simulator service cold-start timed out; retrying once',flush=True)
+            subprocess.run(['open','-a',os.path.join(os.environ['DEVELOPER_DIR'],'Applications/Simulator.app')],check=False)
+
+subprocess.run(['open','-a',os.path.join(os.environ['DEVELOPER_DIR'],'Applications/Simulator.app')],check=False)
 runtimes=json.loads(run('xcrun','simctl','list','runtimes','-j'))['runtimes']
 runtime=next(r['identifier'] for r in runtimes if r.get('isAvailable') and '.iOS-26' in r['identifier'])
 types=json.loads(run('xcrun','simctl','list','devicetypes','-j'))['devicetypes']
@@ -9,7 +18,10 @@ for attempt in range(2):
     identifier=run('xcrun','simctl','create',f'Shiguang-Review-{attempt}',device,runtime).strip()
     print('Booting fresh test device',identifier,flush=True)
     subprocess.run(['open','-a',os.path.join(os.environ['DEVELOPER_DIR'],'Applications/Simulator.app'),'--args','-CurrentDeviceUDID',identifier],check=False)
-    subprocess.run(['xcrun','simctl','boot',identifier],check=False,timeout=60)
+    try:
+        subprocess.run(['xcrun','simctl','boot',identifier],check=False,timeout=90)
+    except subprocess.TimeoutExpired:
+        print('Boot command is still starting; checking actual boot state',flush=True)
     try:
         result=run('xcrun','simctl','bootstatus',identifier,'-b',timeout=180)
         print(result,flush=True)

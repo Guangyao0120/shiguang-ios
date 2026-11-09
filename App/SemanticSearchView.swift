@@ -100,7 +100,7 @@ final class SemanticSearchController: ObservableObject {
     func refresh(_ store: LibraryStore) async {
         let eligible = eligible(store); total = eligible.count
         do { indexed = try await LocalSemanticIndex.shared.existing(eligible: eligible).count }
-        catch { status = error.localizedDescription }
+        catch { status = error.localizedDescription; return }
         if !building && !searched { status = indexed == 0 ? "搜索时会先显示标签与文字匹配，并开始建立画面索引。" : "本地搜索已就绪。" }
     }
     func build(_ store: LibraryStore) {
