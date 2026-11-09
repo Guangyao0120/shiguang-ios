@@ -7,6 +7,7 @@ struct AnalysisResult {
     var text: String
     var reasons: [String]
     var hash: UInt64?
+    var labels: [String]
 }
 
 enum LocalAnalyzer {
@@ -40,7 +41,7 @@ enum LocalAnalyzer {
                         let (tags, reasons) = CategoryRules.classify(text: text, screenshot: screenshot,
                             faces: faces.results?.count ?? 0, labels: labels, isVideo: video)
                         continuation.resume(returning: AnalysisResult(tags: tags, text: text,
-                            reasons: reasons, hash: video ? nil : differenceHash(cg)))
+                            reasons: reasons, hash: video ? nil : differenceHash(cg), labels: Array(labels)))
                     } catch { continuation.resume(throwing: error) }
                 }
             }

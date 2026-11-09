@@ -2,13 +2,14 @@ import Foundation
 import CoreLocation
 
 enum PhotoTag: String, Codable, CaseIterable, Identifiable {
-    case portrait = "人像", scenery = "风景", screenshot = "截图"
+    case portrait = "人像", scenery = "风景", screenshot = "截图", food = "美食"
     case chat = "聊天记录", videoCall = "视频通话", shopping = "商品购物"
     case receipt = "收据", invoice = "发票", payment = "支付记录"
     case ticket = "票券", meme = "表情与梗图", video = "视频", other = "待确认"
     var id: String { rawValue }
     var icon: String {
         switch self {
+        case .food: return "fork.knife"
         case .portrait: return "person.crop.rectangle"
         case .scenery: return "mountain.2"
         case .screenshot: return "viewfinder"
@@ -48,6 +49,7 @@ struct MediaRecord: Codable, Identifiable {
     var keywords: [String]?
     var voiceTranscript: String?
     var videoTitle: String?
+    var visualLabels: [String]?
     var effectiveTags: Set<PhotoTag> {
         let result = tags.union(addedTags).subtracting(removedTags)
         return result.isEmpty ? [.other] : result
@@ -142,6 +144,9 @@ enum CategoryRules {
             add(.videoCall, "截图中有通话控制文字；建议复核")
         }
         let visual = labels.joined(separator: " ").lowercased()
+        if ["food", "bread", "meal", "cuisine", "breakfast", "dessert", "pizza", "cake", "fruit", "vegetable", "dish", "noodle"].contains(where: visual.contains) {
+            add(.food, "本地图像分类命中食品线索")
+        }
         if ["landscape", "mountain", "beach", "forest", "sunset", "scenery"].contains(where: visual.contains) {
             add(.scenery, "本地图像分类命中风景线索")
         }

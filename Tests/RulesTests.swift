@@ -4,6 +4,81 @@ import UIKit
 @testable import Shiguang
 
 final class RulesTests: XCTestCase {
+
+    func testReviewMovesInBothDirectionsAndCanRevisitStagedImages() {
+        let ids = ["a", "b", "gone", "c"]
+        let existing: Set<String> = ["a", "b", "c"]
+        XCTAssertEqual(ReviewNavigation.next(from: 0, ids: ids, existing: existing, pending: ["b"]), 3)
+        XCTAssertEqual(ReviewNavigation.previous(from: 3, ids: ids, existing: existing), 1)
+        XCTAssertEqual(ReviewNavigation.previous(from: 0, ids: ids, existing: existing), 0)
+        XCTAssertEqual(ReviewNavigation.next(from: 3, ids: ids, existing: existing, pending: []), 4)
+        XCTAssertEqual(ReviewNavigation.previous(from: 4, ids: ids, existing: existing), 3)
+    }
+    func testFoodClassificationUsesVisualContent() {
+        let result = CategoryRules.classify(text: "", screenshot: false, faces: 0, labels: ["bread", "breakfast"], isVideo: false)
+        XCTAssertTrue(result.0.contains(.food))
+        XCTAssertFalse(CategoryRules.classify(text: "", screenshot: true, faces: 0, labels: ["document"], isVideo: false).0.contains(.food))
+    }
+    func testVectorPackingRejectsInvalidFeatures() throws {
+        var vector = [Float](repeating: 0, count: 512); vector[0] = 3; vector[1] = 4
+        let packed = try VectorMath.pack(vector)
+        XCTAssertEqual(packed.count, 1024)
+        let decoded = try VectorMath.unpack(packed)
+        XCTAssertEqual(decoded[0], 0.6, accuracy: 0.001)
+        XCTAssertEqual(VectorMath.score(decoded,decoded), 1, accuracy: 0.001)
+        XCTAssertThrowsError(try VectorMath.pack([Float](repeating: 0,count: 512)))
+        XCTAssertThrowsError(try VectorMath.unpack(Data([0,1])))
+        vector[0] = .nan
+        XCTAssertThrowsError(try VectorMath.pack(vector))
+    }
+    func testSearchIndexPersistsAndExcludesHiddenOrModifiedPhotos() async throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("sqlite")
+        defer { try? FileManager.default.removeItem(at: url) }
+        var vector = [Float](repeating: 0,count: 512); vector[0] = 1
+        let index = LocalSemanticIndex(databaseURL: url)
+        try await index.putBatch([SearchVector(id:"a",stamp:"old",vector:vector), SearchVector(id:"hidden",stamp:"1",vector:vector)])
+        let existing = try await index.existing(eligible: ["a":"old"])
+        XCTAssertEqual(existing, ["a"])
+        let changed = try await index.rank(vector: vector, eligible: ["a":"new"])
+        XCTAssertTrue(changed.isEmpty)
+        let reopened = LocalSemanticIndex(databaseURL: url)
+        let hits = try await reopened.rank(vector: vector, eligible: ["a":"old"])
+        XCTAssertEqual(hits.map(\.id), ["a"])
+        XCTAssertEqual(hits.first!.score,1,accuracy:0.001)
+        do {
+            try await index.putBatch([SearchVector(id:"rollback",stamp:"1",vector:vector), SearchVector(id:"bad",stamp:"1",vector:[])])
+            XCTFail("Invalid batch must roll back")
+        } catch { }
+        let rolled = try await index.existing(eligible:["rollback":"1"])
+        XCTAssertTrue(rolled.isEmpty)
+    }
+    func testBundledTokenizerMatchesOfficialOpenAITokensAndTruncatesSafely() throws {
+        let folder = try XCTUnwrap(Bundle.main.url(forResource:"CLIPModels",withExtension:nil))
+        let data = try Data(contentsOf:folder.appendingPathComponent("validation.json"))
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with:data) as? [String:Any])
+        let fixtures = try XCTUnwrap(json["token_fixtures"] as? [String:[Int]])
+        let tokenizer = try CLIPTokenizer(folder:folder)
+        for (text,expected) in fixtures { XCTAssertEqual(try tokenizer.encode(text).map(Int.init),expected,text) }
+    }
+    func testCoreMLTextModelMatchesConversionReference() async throws {
+        let folder = try XCTUnwrap(Bundle.main.url(forResource:"CLIPModels",withExtension:nil))
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with:Data(contentsOf:folder.appendingPathComponent("validation.json"))) as? [String:Any])
+        let reference = try VectorMath.normalized(try XCTUnwrap(json["text_reference"] as? [Double]).map(Float.init))
+        let vector = try await LocalSemanticIndex.shared.encode(text:"a photo of a sliced baguette")
+        XCTAssertGreaterThan(VectorMath.score(vector,reference),0.995)
+        await LocalSemanticIndex.shared.unload()
+    }
+    @MainActor
+    func testCoreMLImageModelRunsOffUIAndProducesNormalizedVector() async throws {
+        let image = UIGraphicsImageRenderer(size:CGSize(width:300,height:180)).image { context in
+            UIColor.orange.setFill(); context.fill(CGRect(x:0,y:0,width:300,height:180))
+        }
+        let vector = try await LocalSemanticIndex.shared.encode(image:image)
+        XCTAssertEqual(vector.count,512)
+        XCTAssertEqual(VectorMath.score(vector,vector),1,accuracy:0.001)
+        await LocalSemanticIndex.shared.unload()
+    }
+
     @MainActor
     func testForegroundScanStartsBeforeNotificationPermissionOrBackgroundHandler() async throws {
         let suite = "ScanStartup-" + UUID().uuidString

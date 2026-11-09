@@ -57,7 +57,7 @@ struct RootView: View {
 
         .onChange(of: phase) { _, newValue in
             if newValue == .active { ScanRuntime.shared.enterForeground(); store.refreshIfNeeded() }
-            if newValue == .background { ScanRuntime.shared.enterBackground(); store.save(immediately: true); PhotoAccess.clearCache() }
+            if newValue == .background { ScanRuntime.shared.enterBackground(); SemanticSearchController.shared.background(); store.save(immediately: true); PhotoAccess.clearCache() }
         }
         .alert("拾光", isPresented: Binding(get: { store.message != nil }, set: { if !$0 { store.message = nil } })) {
             Button("知道了", role: .cancel) { store.message = nil }
@@ -115,6 +115,9 @@ struct HomeView: View {
                     Button("管理可访问的照片") { presentLimitedPicker() }
                         .font(.footnote)
                 }
+                NavigationLink { SemanticSearchView(initialQuery: query) } label: {
+                    Label("用描述找照片", systemImage: "sparkle.magnifyingglass").frame(maxWidth: .infinity, alignment: .leading)
+                }.buttonStyle(.bordered)
                 if !query.isEmpty {
                     MediaGrid(records: searchResults)
                 } else {
@@ -292,6 +295,7 @@ struct Thumbnail: View {
     var id: String
     var fit = false
     var resolution: CGFloat = 320
+    var clearOnly = false
     @State private var image: UIImage?
     var body: some View {
         ZStack {
@@ -307,8 +311,10 @@ struct Thumbnail: View {
         .task(id: id) {
             image = nil
             guard !DesignPreview.enabled else { return }
-            let result = await PhotoAccess.image(id: id, size: CGSize(width: resolution, height: resolution))
-            if !Task.isCancelled { image = result }
+            if !clearOnly {
+                let result = await PhotoAccess.image(id: id, size: CGSize(width: resolution, height: resolution))
+                if !Task.isCancelled { image = result }
+            }
             guard !Task.isCancelled else { return }
             let clear = await PhotoAccess.image(id: id, size: CGSize(width: resolution, height: resolution), highQuality: true)
             if !Task.isCancelled, let clear { image = clear }
@@ -468,7 +474,7 @@ struct ReviewView: View {
         VStack(spacing: 18) {
             Text("\(min(index + 1, ids.count)) / \(ids.count)").font(.subheadline).foregroundStyle(Palette.secondary)
             if let current {
-                Thumbnail(id: current, fit: true, resolution: 2048).frame(maxHeight: .infinity).clipped()
+                Thumbnail(id: current, fit: true, resolution: 2048, clearOnly: true).frame(maxHeight: .infinity).clipped()
                     .clipShape(RoundedRectangle(cornerRadius: 20))
                     .offset(offset).rotationEffect(.degrees(Double(offset.width / 30)))
                     .overlay(alignment: .top) {
@@ -476,20 +482,22 @@ struct ReviewView: View {
                     }
                     .gesture(DragGesture().onChanged { offset = $0.translation }.onEnded { value in
                         if value.translation.height < -100 { stageCurrent() }
-                        else if abs(value.translation.width) > 100 { index += 1 }
+                        else if value.translation.width < -100 { next() }
+                        else if value.translation.width > 100 { previous() }
                         withAnimation { offset = .zero }
                     })
-                Text("上滑待删 · 左右跳过").font(.footnote).foregroundStyle(Palette.secondary)
+                Text("左滑下一张 · 右滑上一张 · 上滑待删").font(.footnote).foregroundStyle(Palette.secondary)
                 HStack {
                     if store.state.records[current]?.isVideo != true {
-                        Button("查看原图", systemImage: "arrow.up.left.and.arrow.down.right") { showingOriginal = true }
+                        Button("查看清晰", systemImage: "arrow.up.left.and.arrow.down.right") { showingOriginal = true }
                             .buttonStyle(.bordered)
                     }
-                    Button("跳过") { index += 1 }.buttonStyle(.bordered)
+                    Button("下一张") { next() }.buttonStyle(.bordered)
                     Button("放入待删", role: .destructive) { stageCurrent() }.buttonStyle(.bordered)
                 }
                 NavigationLink("查看详情与分类") { DetailView(id: current) }
             } else {
+                Button("上一张") { previous() }
                 ContentUnavailableView("这一组看完了", systemImage: "checkmark.circle", description: Text("待删照片可以在「待删」页集中审核。"))
             }
             Button("撤销最近一次待删") {
@@ -500,15 +508,16 @@ struct ReviewView: View {
         }.padding().background(canvas).navigationTitle("连续整理").navigationBarTitleDisplayMode(.inline)
             .toolbar { Button("完成") { dismiss() } }
             .onAppear { skipPending() }
-            .onChange(of: index) { _, _ in skipPending() }
             .fullScreenCover(isPresented: $showingOriginal, onDismiss: { skipPending() }) {
                 if let current { OriginalPhotoView(id: current) }
             }
     }
     private func stageCurrent() {
         guard let current else { return }
-        store.stage(current); index += 1
+        store.stage(current); next()
     }
+    private func next() { index = ReviewNavigation.next(from: index, ids: ids, existing: Set(store.state.records.keys), pending: store.state.pending) }
+    private func previous() { index = ReviewNavigation.previous(from: index, ids: ids, existing: Set(store.state.records.keys)) }
     private func skipPending() {
         while index < ids.count && (store.state.pending.contains(ids[index]) || store.state.records[ids[index]] == nil) { index += 1 }
     }

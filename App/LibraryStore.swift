@@ -115,7 +115,7 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
         guard loaded else { return }
         indexTask?.cancel(); indexWorker?.cancel()
         indexTask = Task { [weak self] in
-            do { try await Task.sleep(nanoseconds: 100_000_000) } catch { return }
+            await Task.yield()
             guard let self, !Task.isCancelled else { return }
             let snapshot = self.state, visible = self.visibleIDs, version = self.revision
             let worker = Task.detached(priority: .utility) { LibraryIndex.build(state: snapshot, visible: visible) }
@@ -202,6 +202,7 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
             guard let self else { return }
             var updates: [MediaRecord] = []
             var handled = 0
+            var lastCommit = Date()
             var completedAll = false
             defer {
                 self.commitAnalysis(updates); self.scanning = false; self.save(immediately: true)
@@ -219,7 +220,7 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
                         let result = try await LocalAnalyzer.analyze(image, screenshot: record.isScreenshot, video: false, cpuOnly: UIApplication.shared.applicationState != .active)
                         guard !Task.isCancelled else { return }
                         updated.tags = result.tags; updated.text = String(result.text.prefix(4000))
-                        updated.reasons = result.reasons; updated.hash = result.hash
+                        updated.reasons = result.reasons; updated.hash = result.hash; updated.visualLabels = result.labels
                         updated.analyzed = true; updated.unavailable = false
                     } catch { updated.reasons = ["本次识别失败，下次可重试"] }
                 } else {
@@ -228,11 +229,13 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
                 }
                 updates.append(updated)
                 handled += 1
-                if updates.count >= 5 { self.commitAnalysis(updates); updates.removeAll(keepingCapacity: true); self.save() }
+                if updates.count >= 24 || Date().timeIntervalSince(lastCommit) >= 2 {
+                    self.commitAnalysis(updates); updates.removeAll(keepingCapacity: true); self.save(); lastCommit = Date()
+                }
                 self.progress = Double(position + 1) / Double(todo.count)
                 ScanRuntime.shared.updateProgress(done: position + 1, total: todo.count)
                 self.status = "正在整理 · \(position + 1)/\(todo.count)"
-                do { try await Task.sleep(nanoseconds: 100_000_000) } catch { return }
+                await Task.yield()
             }
             self.status = "本批完成 · 可继续整理"
             completedAll = true
@@ -244,6 +247,7 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
         for value in updates {
             guard var record = next.records[value.id] else { continue }
             record.tags = value.tags; record.text = value.text; record.reasons = value.reasons
+            record.visualLabels = value.visualLabels
             record.hash = value.hash; record.analyzed = value.analyzed; record.unavailable = value.unavailable
             next.records[value.id] = record // Preserve current manual edits.
         }

@@ -109,7 +109,7 @@ enum LibraryMetadata {
             if record.modified != value.modified {
                 record.analyzed = false; record.hash = nil; record.text = ""
                 record.tags = []; record.reasons = []; record.aiSummary = nil
-                record.voiceTranscript = nil; record.videoTitle = nil
+                record.voiceTranscript = nil; record.videoTitle = nil; record.visualLabels = nil
             }
             record.date = value.date; record.modified = value.modified
             record.latitude = value.latitude; record.longitude = value.longitude

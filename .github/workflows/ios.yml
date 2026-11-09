@@ -6,6 +6,7 @@ on:
     paths:
       - 'App/**'
       - 'Tests/**'
+      - 'scripts/**'
       - 'Shiguang.xcodeproj/**'
       - '.github/workflows/ios.yml'
 permissions:
@@ -18,9 +19,28 @@ concurrency:
 jobs:
   simulator:
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/cache@v4
+        id: clip-cache
+        with:
+          path: App/CLIPModels
+          key: clip-b32-fp16-v1-${{ hashFiles('scripts/prepare_clip.py') }}
+      - name: Prepare local CLIP models
+        if: steps.clip-cache.outputs.cache-hit != 'true'
+        run: |
+          python -m pip install 'numpy==1.26.4' 'torch==2.2.2' 'torchvision==0.17.2' 'coremltools==8.3' 'git+https://github.com/openai/CLIP.git@d05afc436d78f1c48dc0dbf8e5980a9d471f35f6'
+          python scripts/prepare_clip.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Shiguang-Local-CLIP
+          path: App/CLIPModels
+          if-no-files-found: error
+          retention-days: 7
       - name: Locate project
         run: |
           PROJECT=$(find "$GITHUB_WORKSPACE" -name Shiguang.xcodeproj -type d -print -quit)
@@ -90,6 +110,10 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Shiguang-Local-CLIP
+          path: App/CLIPModels
       - name: Archive for real iPhone (sign locally before install)
         run: |
           set -o pipefail
