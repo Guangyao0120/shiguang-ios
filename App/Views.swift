@@ -90,6 +90,7 @@ struct RootView: View {
 
 struct HomeView: View {
     @EnvironmentObject var store: LibraryStore
+    @ObservedObject private var semantic = SemanticSearchController.shared
     @State private var query = ""
     @State private var searchResults: [MediaRecord] = []
     @State private var showingHelp = false
@@ -118,16 +119,19 @@ struct HomeView: View {
                     Image(systemName: "leaf").font(.system(size: 34, weight: .ultraLight)).foregroundStyle(Palette.accent)
                 }
                 VStack(alignment: .leading, spacing: 10) {
-                    Label(L.status(store.status), systemImage: store.scanning ? "viewfinder" : "checkmark.circle")
+                    Label(L.status(semantic.building ? semantic.status : store.status), systemImage: semantic.building ? "sparkle.magnifyingglass" : (store.scanning ? "viewfinder" : "checkmark.circle"))
                         .font(.subheadline).foregroundStyle(Palette.secondary).lineLimit(2)
-                    if store.scanning {
+                    if semantic.building {
+                        ProgressView(value: Double(semantic.indexed), total: Double(max(1,semantic.total)))
+                    } else if store.scanning {
                         ProgressView(value: store.progress)
                         if store.scanRate > 0 { Text(L.f("本次 %.1f 张/秒",store.scanRate)).font(.caption).foregroundStyle(Palette.secondary) }
                     }
                     HStack {
-                        Button(store.scanning ? "暂停" : (runtime.launching ? "准备中…" : (screenshotsOnly ? "整理截图" : "开始整理"))) {
-                            if store.scanning { ScanRuntime.shared.pause() } else { ScanRuntime.shared.start() }
-                        }.buttonStyle(QuietPrimaryButtonStyle()).disabled(runtime.launching || store.busy || store.refreshing || !store.loaded)
+                        Button(L.t(semantic.building ? "暂停建索引" : (store.scanning ? "暂停" : (runtime.launching ? "准备中…" : (screenshotsOnly ? "整理截图" : "开始整理"))))) {
+                            if semantic.building { semantic.pause() }
+                            else if store.scanning { ScanRuntime.shared.pause() } else { ScanRuntime.shared.start() }
+                        }.buttonStyle(QuietPrimaryButtonStyle()).disabled(runtime.launching || (store.busy && !semantic.building) || store.refreshing || !store.loaded)
                         Menu("更多") {
                             Button("刷新相册") { store.refresh() }
                             Button("整理所有图片") { ScanRuntime.shared.start(screenshotsOnly: false) }
@@ -467,8 +471,7 @@ struct DetailView: View {
                             }.buttonStyle(.plain)
                         }
                     }
-                    Text("关联人物").font(.headline)
-                    if store.state.people.isEmpty { Text("在「人物」中添加名字").font(.footnote).foregroundStyle(Palette.secondary) }
+                    if !store.state.people.isEmpty { Text("关联人物").font(.headline) }
                     ForEach(store.state.people) { person in
                         Button { store.togglePerson(id, person.id) } label: {
                             Label(person.name, systemImage: record.people.contains(person.id) ? "checkmark.circle.fill" : "circle")
@@ -594,7 +597,7 @@ struct PendingView: View {
             } else {
                 HStack(alignment: .center) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("已选 \(valid.count) 项").font(.headline).monospacedDigit().accessibilityIdentifier("pending.count")
+                        Text(L.f("已选 %d 项",valid.count)).font(.headline).monospacedDigit().accessibilityIdentifier("pending.count")
                         Text("长按拖动，连续选择").font(.caption).foregroundStyle(Palette.secondary)
                     }
                     Spacer()
@@ -631,7 +634,7 @@ struct PendingView: View {
             Button { store.restoreAllPending(ids: valid); selection = [] } label: {
                 Label("恢复所选", systemImage: "arrow.uturn.backward").frame(maxWidth: .infinity, minHeight: 44)
             }.albumGlassButton().disabled(valid.isEmpty || deleting)
-                .accessibilityLabel("恢复所选 \(valid.count) 项").accessibilityIdentifier("pending.restore")
+                .accessibilityLabel(L.f("恢复所选 %d 项",valid.count)).accessibilityIdentifier("pending.restore")
             Button(role: .destructive) {
                 let ids = valid
                 deleting = true
@@ -641,9 +644,9 @@ struct PendingView: View {
                     await store.deletePending(selected: ids)
                 }
             } label: {
-                Label(deleting ? "处理中…" : "删除所选", systemImage: "trash").frame(maxWidth: .infinity, minHeight: 44)
+                Label(L.t(deleting ? "处理中…" : "删除所选"), systemImage: "trash").frame(maxWidth: .infinity, minHeight: 44)
             }.tint(.red).albumGlassButton(prominent: true).disabled(valid.isEmpty || deleting || (store.busy && !search.building))
-                .accessibilityLabel(deleting ? "等待系统处理…" : "删除所选 \(valid.count) 项").accessibilityIdentifier("pending.delete")
+                .accessibilityLabel(deleting ? L.t("等待系统处理…") : L.f("删除所选 %d 项",valid.count)).accessibilityIdentifier("pending.delete")
         }.font(.subheadline.weight(.semibold))
     }
 }

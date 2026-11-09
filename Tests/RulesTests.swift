@@ -4,6 +4,23 @@ import UIKit
 @testable import Shiguang
 
 final class RulesTests: XCTestCase {
+    @MainActor
+    func testSearchControllerReturnsPeopleWithoutVectorsOrBackgroundIndexing() async throws {
+        let store = LibraryStore()
+        var record = media("person-without-vector"); record.tags = [.portrait]
+        var state = LibraryState(); state.records[record.id] = record
+        store.seedForTesting(state)
+        let engine = SemanticSearchController()
+        engine.search(PhotoSearchQuery.english("人"),store:store,originalQuery:"人",startIndex:false)
+        for _ in 0..<200 {
+            if engine.searched && !engine.searching { break }
+            try await Task.sleep(for:.milliseconds(10))
+        }
+        XCTAssertTrue(engine.searched)
+        XCTAssertFalse(engine.building)
+        XCTAssertFalse(store.busy)
+        XCTAssertEqual(engine.hits.map(\.id),[record.id])
+    }
     func testDragRangeSelectionReversesWithoutLosingPreviousChoices() {
         let ids = (0..<10).map(String.init)
         let range = DragSelection(ids: ids, selection: ["0","9"], anchor: 2)
@@ -396,7 +413,8 @@ final class RulesTests: XCTestCase {
                 XCTAssertGreaterThanOrEqual((max(first, second) + 0.05) / (min(first, second) + 0.05), 4.5)
             }
             for text in [Palette.ink, Palette.secondary, Palette.accent] {
-                for background in [Palette.surface, Palette.canvas] {
+                let canvas = AlbumBackground.color(AlbumBackground.system.hex(dark: style == .dark,custom: ""))
+                for background in [Palette.surface, canvas] {
                     let first = luminance(text, style), second = luminance(background, style)
                     let contrast = (max(first, second) + 0.05) / (min(first, second) + 0.05)
                     XCTAssertGreaterThanOrEqual(contrast, 4.5, "Text contrast in \(style.rawValue)")

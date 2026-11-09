@@ -28,10 +28,10 @@ enum Palette {
     }
     static let surface = Color(uiColor: .secondarySystemGroupedBackground)
     static let ink = Color(uiColor: .label)
-    static let secondary = Color(uiColor: .secondaryLabel)
+    static let secondary = adaptive(0x59636B, 0xBAC6D0)
     static let accent = adaptive(0x286D88, 0x9ED7EB)
     static let onAccent = adaptive(0xFFFFFF, 0x122C38)
-    static let destructive = Color(uiColor: .systemRed)
+    static let destructive = adaptive(0xA8332D, 0xE59C94)
     static let line = Color(uiColor: .separator)
 }
 

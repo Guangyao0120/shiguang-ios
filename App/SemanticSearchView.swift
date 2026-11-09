@@ -286,7 +286,7 @@ struct SemanticSearchView: View {
                     HStack {
                         Text("搜索结果").font(.title3.weight(.semibold))
                         Spacer()
-                        Text("\(validHits.count) 项").foregroundStyle(Palette.secondary).monospacedDigit().accessibilityIdentifier("search.count")
+                        Text(L.f("%d 项",validHits.count)).foregroundStyle(Palette.secondary).monospacedDigit().accessibilityIdentifier("search.count")
                     }
                     if validHits.isEmpty {
                         ContentUnavailableView("暂未找到", systemImage: "magnifyingglass", description: Text(engine.indexed < engine.total ? "标签与文字中没有匹配，画面索引完成后可找到更多照片。" : "试试更具体的物品、场景或标签。"))
