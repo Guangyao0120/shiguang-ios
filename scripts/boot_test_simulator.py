@@ -8,8 +8,8 @@ device=next(t['identifier'] for t in types if t['name']=='iPhone 17 Pro')
 for attempt in range(2):
     identifier=run('xcrun','simctl','create',f'Shiguang-Review-{attempt}',device,runtime).strip()
     print('Booting fresh test device',identifier,flush=True)
-    subprocess.run(['open','-a','Simulator','--args','-CurrentDeviceUDID',identifier],check=False)
-    run('xcrun','simctl','boot',identifier)
+    subprocess.run(['open','-a',os.path.join(os.environ['DEVELOPER_DIR'],'Applications/Simulator.app'),'--args','-CurrentDeviceUDID',identifier],check=False)
+    subprocess.run(['xcrun','simctl','boot',identifier],check=False,timeout=60)
     try:
         result=run('xcrun','simctl','bootstatus',identifier,'-b',timeout=180)
         print(result,flush=True)
