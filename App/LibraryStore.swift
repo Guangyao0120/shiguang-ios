@@ -71,6 +71,10 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
             }
             sample.trips = [Trip(name: "中秋 · 长沙", members: Set((0..<18).map { "preview-\($0)" }))]
             sample.pending = ["preview-3", "preview-7"]
+            sample.customTagNames = ["工作", "纪念", "待买"]
+            var video = MediaRecord(id: "preview-video", date: Date(), isVideo: true, isScreenshot: false, duration: 32)
+            video.videoTitle = "桐桐 · 生日祝福"; video.voiceTranscript = "祝桐桐生日快乐，开开心心每一天。"; video.tags = [.video]
+            sample.records[video.id] = video
             state = sample; visibleIDs = Set(sample.records.keys)
             index = await Task.detached { LibraryIndex.build(state: sample, visible: Set(sample.records.keys)) }.value
             indexVersion += 1; status = "从上次继续"; loaded = true
@@ -194,13 +198,15 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
             guard let self else { return }
             var updates: [MediaRecord] = []
             var handled = 0
+            var completedAll = false
             defer {
                 self.commitAnalysis(updates); self.scanning = false; self.save(immediately: true)
-                let finished = !Task.isCancelled, count = handled, saving = self.saveTask
+                let finished = completedAll && !Task.isCancelled, count = handled, saving = self.saveTask
                 Task { await saving?.value; onFinish?(finished, count) }
             }
             for (position, record) in todo.enumerated() {
                 if Task.isCancelled { return }
+                guard UIApplication.shared.isProtectedDataAvailable else { self.status = "解锁后继续，进度已保留"; return }
                 var updated = record
                 let image = await PhotoAccess.image(id: record.id, size: CGSize(width: record.isScreenshot ? 1024 : 640, height: record.isScreenshot ? 1024 : 640), highQuality: true)
                 guard !Task.isCancelled else { return }
@@ -212,7 +218,10 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
                         updated.reasons = result.reasons; updated.hash = result.hash
                         updated.analyzed = true; updated.unavailable = false
                     } catch { updated.reasons = ["本次识别失败，下次可重试"] }
-                } else { updated.unavailable = true }
+                } else {
+                    updated.unavailable = UIApplication.shared.applicationState == .active
+                    if !updated.unavailable { updated.reasons = ["后台暂未读取到原件，下次重试"] }
+                }
                 updates.append(updated)
                 handled += 1
                 if updates.count >= 5 { self.commitAnalysis(updates); updates.removeAll(keepingCapacity: true); self.save() }
@@ -222,6 +231,7 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
                 do { try await Task.sleep(nanoseconds: 100_000_000) } catch { return }
             }
             self.status = "本批完成 · 可继续整理"
+            completedAll = true
         }
     }
     private func commitAnalysis(_ updates: [MediaRecord]) {

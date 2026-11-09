@@ -14,6 +14,7 @@ enum DesignPreview {
         guard enabled, let value = Int(ProcessInfo.processInfo.environment["SHIGUANG_PREVIEW_TAB"] ?? "0"), (0...4).contains(value) else { return 0 }
         return value
     }
+    static var screen: String { enabled ? (ProcessInfo.processInfo.environment["SHIGUANG_PREVIEW_SCREEN"] ?? "") : "" }
 }
 
 enum Palette {

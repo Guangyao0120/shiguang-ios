@@ -14,6 +14,7 @@ enum AlbumAppearance: String, CaseIterable, Identifiable {
 final class ScanRuntime: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
     static let shared = ScanRuntime()
     @Published var note = ""
+    @Published var launching = false
     weak var store: LibraryStore?
     private var continued: BGTask?
     private var lease = UIBackgroundTaskIdentifier.invalid
@@ -41,7 +42,7 @@ final class ScanRuntime: NSObject, ObservableObject, UNUserNotificationCenterDel
         }
     }
     func start(screenshotsOnly: Bool? = nil, limit: Int? = nil) {
-        guard let store, !store.scanning, !store.refreshing, !store.busy, store.loaded else { return }
+        guard !launching, let store, !store.scanning, !store.refreshing, !store.busy, store.loaded else { return }
         let scope = screenshotsOnly ?? (UserDefaults.standard.object(forKey: "screenshotsOnly") as? Bool ?? true)
         let setting = UserDefaults.standard.object(forKey: "scanLimit") as? Int ?? 0
         let count = limit ?? (setting == 0 ? Int.max : setting)
@@ -51,9 +52,11 @@ final class ScanRuntime: NSObject, ObservableObject, UNUserNotificationCenterDel
         userPaused = false; scheduledScope = scope
         UserDefaults.standard.set(scope, forKey: "resumeScreenshotsOnly")
         UserDefaults.standard.set(count, forKey: "resumeScanLimit")
+        launching = true
         Task {
+            defer { launching = false }
             if noticesEnabled { await requestNotificationPermission() }
-            guard !store.scanning, !store.busy, !store.refreshing else { return }
+            guard !userPaused, !store.scanning, !store.busy, !store.refreshing else { return }
             if backgroundEnabled, #available(iOS 26.0, *), continuedRegistered {
                 let request = BGContinuedProcessingTaskRequest(identifier: continuedID, title: "拾光正在整理照片", subtitle: "本机识别，不上传图片")
                 request.strategy = .fail
@@ -113,6 +116,7 @@ final class ScanRuntime: NSObject, ObservableObject, UNUserNotificationCenterDel
         }
         schedule()
     }
+    func enterForeground() { endLease() }
     private func expired() {
         note = "系统结束了本次后台时段，已请求保存；等待下一次调度"
         store?.pause(); store?.save(immediately: true)
@@ -151,8 +155,9 @@ final class ScanRuntime: NSObject, ObservableObject, UNUserNotificationCenterDel
         guard settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional else { return }
         let remaining = store.map { library in ScanPolicy.candidates(library.records.compactMap { library.state.records[$0.id] }, screenshotsOnly: scope, limit: Int.max).count } ?? 0
         let content = UNMutableNotificationContent()
-        content.title = remaining == 0 ? "照片整理完成" : "本批整理完成"
-        content.body = "已处理\(count)项" + (remaining > 0 ? "，还有\(remaining)项等待整理。" : "，打开拾光查看分类。")
+        let unavailable = store?.state.records.values.contains(where: { $0.unavailable && (!scope || $0.isScreenshot) }) ?? false
+        content.title = remaining > 0 ? "本批整理完成" : (unavailable ? "本次整理结束" : "照片整理完成")
+        content.body = "已处理\(count)项" + (remaining > 0 ? "，还有\(remaining)项等待整理。" : (unavailable ? "，部分原件需下载后再整理。" : "，打开拾光查看分类。"))
         content.sound = .default
         do { try await center.add(UNNotificationRequest(identifier: "shiguang-scan-finished", content: content, trigger: nil)) }
         catch { note = "整理完成，通知未能送达" }

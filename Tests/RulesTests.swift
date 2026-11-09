@@ -4,6 +4,13 @@ import UIKit
 @testable import Shiguang
 
 final class RulesTests: XCTestCase {
+    func testCustomCategoriesExistBeforeAssignmentAndSurviveStorage() throws {
+        var state = LibraryState(); state.customTagNames = [" 工作 ", "工作", "纪念"]
+        let decoded = try JSONDecoder().decode(LibraryState.self, from: JSONEncoder().encode(state))
+        let index = LibraryIndex.build(state: decoded, visible: [])
+        XCTAssertEqual(Set(index.keywords), ["工作", "纪念"])
+        XCTAssertTrue(index.byKeyword.isEmpty)
+    }
     func testVideoTitlesUseExplicitRecipientsAndDoNotInventNames() {
         XCTAssertEqual(VideoTitleRules.title(from: "桐桐你好，祝桐桐生日快乐！"), "桐桐 · 生日祝福")
         XCTAssertEqual(VideoTitleRules.title(from: "祝你生日快乐"), "生日祝福 · 对象待确认")

@@ -19,7 +19,13 @@ struct RootView: View {
                         
                     }.padding(28).frame(maxWidth: .infinity, maxHeight: .infinity).background(canvas)
                 } else {
-                if #available(iOS 26.0, *) {
+                if DesignPreview.screen == "settings" {
+                    NavigationStack { AlbumSettingsView() }
+                } else if DesignPreview.screen == "detail" {
+                    NavigationStack { DetailView(id: "preview-4") }
+                } else if DesignPreview.screen == "video" {
+                    NavigationStack { VideoOrganizeView(id: "preview-video") }
+                } else if #available(iOS 26.0, *) {
                     navigationTabs
                 } else {
                     navigationTabs.toolbar(.hidden, for: .tabBar)
@@ -50,7 +56,7 @@ struct RootView: View {
         .task { await store.start() }
 
         .onChange(of: phase) { _, newValue in
-            if newValue == .active { store.refreshIfNeeded() }
+            if newValue == .active { ScanRuntime.shared.enterForeground(); store.refreshIfNeeded() }
             if newValue == .background { ScanRuntime.shared.enterBackground(); store.save(immediately: true); PhotoAccess.clearCache() }
         }
         .alert("拾光", isPresented: Binding(get: { store.message != nil }, set: { if !$0 { store.message = nil } })) {
