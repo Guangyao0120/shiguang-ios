@@ -9,6 +9,29 @@ final class ReviewUITests: XCTestCase {
     func testTripReviewUsesTheSameControlsAndGestures() { checkRoute(tab:"出游",entry:"collection.trip.",prefix:true) }
 
     @MainActor
+    func testStagingAMiddlePhotoShrinksQueueAndButtonsShareTheSwipeTransition() {
+        let app = XCUIApplication()
+        app.launchEnvironment["SHIGUANG_DESIGN_PREVIEW"] = "1"
+        app.launchEnvironment["SHIGUANG_PREVIEW_LANGUAGE"] = "zh-Hans"
+        app.launch()
+        app.buttons["collection.tag.人像"].tap(); app.buttons["collection.review"].tap()
+        let counter = app.staticTexts["review.counter"]
+        XCTAssertTrue(counter.waitForExistence(timeout:10))
+        let total = Int(counter.label.components(separatedBy:" / ").last ?? "")!
+        app.buttons["review.next"].tap(); assertPosition(2,counter:counter)
+        app.buttons["review.stage"].tap(); assertPosition(2,counter:counter)
+        XCTAssertTrue(counter.label.hasSuffix("/ \(total-1)"))
+        XCTAssertEqual(app.buttons["review.stage"].label,"放入待删")
+        drag(app,dx:0.6,dy:0); assertPosition(1,counter:counter)
+        drag(app,dx:-0.6,dy:0); assertPosition(2,counter:counter)
+        XCTAssertTrue(counter.label.hasSuffix("/ \(total-1)"))
+        app.buttons["review.undo"].tap(); assertPosition(2,counter:counter)
+        XCTAssertTrue(counter.label.hasSuffix("/ \(total)"))
+        let image = XCTAttachment(screenshot:app.screenshot()); image.name = "stage-queue-and-undo"; image.lifetime = .keepAlways; add(image)
+        app.terminate()
+    }
+
+    @MainActor
     func testPendingLongPressDragSelectsAndDeselectsAWholeRow() {
         let app = XCUIApplication()
         app.launchEnvironment["SHIGUANG_DESIGN_PREVIEW"] = "1"
@@ -235,8 +258,12 @@ final class ReviewUITests: XCTestCase {
             drag(app,dx:-0.6,dy:0); assertPosition(2,counter:counter)
             drag(app,dx:0.6,dy:0); assertPosition(1,counter:counter)
         }
-        drag(app,dx:0,dy:-0.6); assertPosition(2,counter:counter)
+        let beforeStage = counter.label
+        drag(app,dx:0,dy:-0.6); assertPosition(1,counter:counter)
+        XCTAssertNotEqual(counter.label,beforeStage,"Pending photos must leave the queue and its total")
+        drag(app,dx:0.6,dy:0); assertPosition(1,counter:counter)
         app.buttons["review.undo"].tap(); assertPosition(1,counter:counter)
+        XCTAssertEqual(counter.label,beforeStage)
         let attachment = XCTAttachment(screenshot:app.screenshot())
         attachment.name = entry; attachment.lifetime = .keepAlways; add(attachment)
         app.buttons["review.done"].tap()

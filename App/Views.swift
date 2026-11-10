@@ -519,37 +519,36 @@ struct DetailView: View {
 struct ReviewView: View {
     @EnvironmentObject var store: LibraryStore
     @Environment(\.dismiss) private var dismiss
-    let ids: [String]
-    @State private var index = 0
+    @State private var queue: ReviewQueue
     @State private var preview: ReviewPreview?
     @State private var closingPreview: ReviewPreview?
     @State private var hasAppeared = false
+    @State private var motion: ReviewMotionRequest?
     init(ids: [String],startID: String? = nil) {
-        self.ids = ids
-        _index = State(initialValue:startID.flatMap { ids.firstIndex(of:$0) } ?? 0)
+        _queue = State(initialValue:ReviewQueue(ids:ids,startID:startID))
     }
-    private var current: String? { index < ids.count ? ids[index] : nil }
+    private var current: String? { queue.current }
     private var nextID: String? {
-        let position = ReviewNavigation.next(from:index,ids:ids,records:store.state.records,pending:store.state.pending)
-        return position < ids.count ? ids[position] : nil
+        let position = ReviewNavigation.next(from:queue.index,ids:queue.ids,records:store.state.records,pending:store.state.pending)
+        return position < queue.ids.count ? queue.ids[position] : nil
     }
     private var previousID: String? {
-        let position = ReviewNavigation.previous(from:index,ids:ids,records:store.state.records)
-        return position != index && position < ids.count ? ids[position] : nil
+        let position = ReviewNavigation.previous(from:queue.index,ids:queue.ids,records:store.state.records,pending:store.state.pending)
+        return position != queue.index && position < queue.ids.count ? queue.ids[position] : nil
     }
     var body: some View {
         VStack(spacing: 18) {
-            Text("\(min(index + 1, ids.count)) / \(ids.count)").accessibilityIdentifier("review.counter").font(.subheadline).foregroundStyle(Palette.secondary)
+            Text("\(min(queue.index + 1, queue.ids.count)) / \(queue.ids.count)").accessibilityIdentifier("review.counter").font(.subheadline).foregroundStyle(Palette.secondary)
             if let current {
                 ReviewPager(current:current,previous:previousID,next:nextID,
                     video:store.state.records[current]?.isVideo == true,
-                    step:{ direction in if direction > 0 { next() } else { previous() } },stage:{ stageCurrent() })
+                    step:{ direction in if direction > 0 { next() } else { previous() } },stage:{ stageCurrent() },command:motion)
                     .frame(maxHeight:.infinity).clipped().clipShape(RoundedRectangle(cornerRadius:20))
                 Text("左滑下一张 · 右滑上一张 · 上滑待删").font(.footnote).foregroundStyle(Palette.secondary)
                 ReviewControls(pending:store.state.pending.contains(current),clear:{
                     let item = ReviewPreview(id:current,wasPending:store.state.pending.contains(current)); closingPreview = item; preview = item
-                },next:{ next() },stageOrRestore:{
-                    if store.state.pending.contains(current) { store.restore(current) } else { stageCurrent() }
+                },next:{ motion = ReviewMotionRequest(action:.next) },stageOrRestore:{
+                    if store.state.pending.contains(current) { store.restore(current) } else { motion = ReviewMotionRequest(action:.stage) }
                 })
                 NavigationLink("查看详情与分类") { DetailView(id: current) }
             } else {
@@ -557,15 +556,20 @@ struct ReviewView: View {
                 ContentUnavailableView("这一组看完了", systemImage: "checkmark.circle", description: Text("待删照片可以在「待删」页集中审核。"))
             }
             Button("撤销最近一次待删") {
+                motion = nil
                 let previous = store.state.lastStaged
                 store.undo()
-                if let previous, let position = ids.firstIndex(of: previous) { index = position }
+                queue.synchronize(records:store.state.records,pending:store.state.pending,preferred:previous)
             }.accessibilityIdentifier("review.undo").disabled(store.state.lastStaged == nil)
         }.padding().coordinateSpace(name:"review.canvas").background(canvas).navigationTitle("连续整理").navigationBarTitleDisplayMode(.inline)
             .toolbar { Button("完成") { dismiss() }.accessibilityIdentifier("review.done") }
             .onAppear { if !hasAppeared { hasAppeared = true; skipPending() } }
+            .onChange(of:store.state.pending) { _,_ in skipPending() }
+            .onChange(of:store.state.records.count) { _,_ in skipPending() }
             .fullScreenCover(item:$preview,onDismiss:{
-                if let item = closingPreview, ReviewNavigation.advanceAfterPreview(id:item.id,current:current,wasPending:item.wasPending,pending:store.state.pending) { next() }
+                // A preview can stage its photo too. Reconcile by identity;
+                // incrementing here would skip the replacement a second time.
+                skipPending()
                 closingPreview = nil
             }) { item in
                 if store.state.records[item.id]?.isVideo == true { ReviewVideoPreview(id:item.id) }
@@ -574,12 +578,12 @@ struct ReviewView: View {
     }
     private func stageCurrent() {
         guard let current else { return }
-        store.stage(current); next()
+        motion = nil; store.stage(current); skipPending()
     }
-    private func next() { index = ReviewNavigation.next(from: index, ids: ids, records:store.state.records, pending: store.state.pending) }
-    private func previous() { index = ReviewNavigation.previous(from: index, ids: ids, records:store.state.records) }
+    private func next() { motion = nil; queue.next(records:store.state.records,pending:store.state.pending) }
+    private func previous() { motion = nil; queue.previous(records:store.state.records,pending:store.state.pending) }
     private func skipPending() {
-        while index < ids.count && (store.state.pending.contains(ids[index]) || store.state.records[ids[index]] == nil) { index += 1 }
+        queue.synchronize(records:store.state.records,pending:store.state.pending)
     }
 }
 

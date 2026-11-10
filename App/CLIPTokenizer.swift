@@ -68,10 +68,10 @@ enum ReviewNavigation {
         while index < ids.count && (records[ids[index]] == nil || pending.contains(ids[index])) { index += 1 }
         return index
     }
-    static func previous(from: Int,ids: [String],records: [String:MediaRecord]) -> Int {
+    static func previous(from: Int,ids: [String],records: [String:MediaRecord],pending: Set<String>) -> Int {
         guard !ids.isEmpty else { return 0 }
         var index = min(from-1,ids.count-1)
-        while index >= 0 { if records[ids[index]] != nil { return index }; index -= 1 }
+        while index >= 0 { if records[ids[index]] != nil && !pending.contains(ids[index]) { return index }; index -= 1 }
         return min(from,ids.count)
     }
     static func next(from: Int, ids: [String], existing: Set<String>, pending: Set<String>) -> Int {
@@ -79,11 +79,11 @@ enum ReviewNavigation {
         while index < ids.count && (!existing.contains(ids[index]) || pending.contains(ids[index])) { index += 1 }
         return index
     }
-    static func previous(from: Int, ids: [String], existing: Set<String>) -> Int {
+    static func previous(from: Int, ids: [String], existing: Set<String>, pending: Set<String>) -> Int {
         guard !ids.isEmpty else { return 0 }
         var index = min(from - 1, ids.count - 1)
         while index >= 0 {
-            if existing.contains(ids[index]) { return index }
+            if existing.contains(ids[index]) && !pending.contains(ids[index]) { return index }
             index -= 1
         }
         return min(from, ids.count)

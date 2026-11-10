@@ -126,8 +126,8 @@ final class RulesTests: XCTestCase {
             XCTAssertEqual(session.ids,["a","b","c"])
             let next = ReviewNavigation.next(from:0,ids:session.ids,existing:Set(state.records.keys),pending:state.pending)
             XCTAssertEqual(session.ids[next],"b")
-            let previous = ReviewNavigation.previous(from:next,ids:session.ids,existing:Set(state.records.keys))
-            XCTAssertEqual(session.ids[previous],"a")
+            let previous = ReviewNavigation.previous(from:next,ids:session.ids,existing:Set(state.records.keys),pending:state.pending)
+            XCTAssertEqual(session.ids[previous],"b")
         }
         XCTAssertEqual(ReviewSession(ids:["a","a","b"]).ids,["a","b"])
         XCTAssertFalse(ReviewNavigation.advanceAfterPreview(id:"a",current:"a",wasPending:true,pending:["a"]))
@@ -233,14 +233,15 @@ final class RulesTests: XCTestCase {
     }
 
 
-    func testReviewMovesInBothDirectionsAndCanRevisitStagedImages() {
+    func testReviewMovesInBothDirectionsWithoutRevisitingStagedImages() {
         let ids = ["a", "b", "gone", "c"]
         let existing: Set<String> = ["a", "b", "c"]
         XCTAssertEqual(ReviewNavigation.next(from: 0, ids: ids, existing: existing, pending: ["b"]), 3)
-        XCTAssertEqual(ReviewNavigation.previous(from: 3, ids: ids, existing: existing), 1)
-        XCTAssertEqual(ReviewNavigation.previous(from: 0, ids: ids, existing: existing), 0)
+        XCTAssertEqual(ReviewNavigation.previous(from: 3, ids: ids, existing: existing, pending:["b"]), 0)
+        XCTAssertEqual(ReviewNavigation.previous(from: 0, ids: ids, existing: existing, pending:["b"]), 0)
         XCTAssertEqual(ReviewNavigation.next(from: 3, ids: ids, existing: existing, pending: []), 4)
-        XCTAssertEqual(ReviewNavigation.previous(from: 4, ids: ids, existing: existing), 3)
+        XCTAssertEqual(ReviewNavigation.previous(from: 4, ids: ids, existing: existing, pending:["c"]), 1)
+        XCTAssertEqual(ReviewNavigation.previous(from: 4, ids: ids, existing: existing, pending:["a","b","c"]), 4)
     }
     func testFoodClassificationUsesVisualContent() {
         let result = CategoryRules.classify(text: "", screenshot: false, faces: 0, labels: ["bread", "breakfast"], isVideo: false)
@@ -651,12 +652,77 @@ final class RulesTests: XCTestCase {
         XCTAssertFalse(cache.failed.contains("a")); XCTAssertEqual(cache.images.count,2)
         cache.clear()
     }
+    func testReviewQueueRemovesPendingFromBothDirectionsAndRestoresOnlyOnUndo() {
+        var state = LibraryState()
+        for id in ["a","b","c","outside"] { state.records[id] = media(id) }
+        var queue = ReviewQueue(ids:["a","b","c"],startID:"b")
+        state.stage("b"); queue.synchronize(records:state.records,pending:state.pending)
+        XCTAssertEqual(queue.ids,["a","c"]); XCTAssertEqual(queue.current,"c"); XCTAssertEqual(queue.index,1)
+        queue.previous(records:state.records,pending:state.pending); XCTAssertEqual(queue.current,"a")
+        queue.next(records:state.records,pending:state.pending); XCTAssertEqual(queue.current,"c")
+        state.undo(); queue.synchronize(records:state.records,pending:state.pending,preferred:"b")
+        XCTAssertEqual(queue.ids,["a","b","c"]); XCTAssertEqual(queue.current,"b")
+        queue.synchronize(records:state.records,pending:state.pending,preferred:"outside")
+        XCTAssertEqual(queue.current,"b")
+        state.stage("a"); state.stage("b"); state.stage("c")
+        queue.synchronize(records:state.records,pending:state.pending)
+        XCTAssertTrue(queue.ids.isEmpty); XCTAssertNil(queue.current)
+        queue.previous(records:state.records,pending:state.pending); XCTAssertNil(queue.current)
+        state.undo(); queue.synchronize(records:state.records,pending:state.pending,preferred:"c")
+        XCTAssertEqual(queue.ids,["c"]); XCTAssertEqual(queue.current,"c")
+        state.records.removeValue(forKey:"c")
+        queue.synchronize(records:state.records,pending:state.pending); XCTAssertNil(queue.current)
+    }
+
+    @MainActor
+    func testStageAnimationPromotesThePrefetchedCardAndCommitsExactlyOnce() async {
+        let window = UIWindow(frame:CGRect(x:0,y:0,width:370,height:600))
+        window.rootViewController = UIViewController(); window.isHidden = false
+        defer { window.isHidden = true }
+        let pager = ReviewScrollView(frame:window.bounds)
+        window.rootViewController!.view.addSubview(pager); pager.layoutIfNeeded()
+        let first = UIGraphicsImageRenderer(size:CGSize(width:8,height:8)).image { _ in UIColor.red.setFill(); UIBezierPath(rect:CGRect(x:0,y:0,width:8,height:8)).fill() }
+        let second = UIGraphicsImageRenderer(size:CGSize(width:8,height:8)).image { _ in UIColor.blue.setFill(); UIBezierPath(rect:CGRect(x:0,y:0,width:8,height:8)).fill() }
+        let images = ["a":first,"b":second]
+        var commits = 0
+        let committed = expectation(description:"one stage commit")
+        pager.configure(current:"a",previous:nil,next:"b",video:false,images:images,failed:[],step:{ _ in },stage:{
+            commits += 1
+            pager.configure(current:"b",previous:nil,next:nil,video:false,images:images,failed:[],step:{ _ in },stage:{ commits += 1 })
+            committed.fulfill()
+        })
+        let prefetched = pager.subviews.compactMap { $0 as? UIImageView }.first { $0.image === second }
+        let request = ReviewMotionRequest(action:.stage)
+        pager.perform(request); pager.perform(request)
+        await fulfillment(of:[committed],timeout:3)
+        XCTAssertEqual(commits,1)
+        XCTAssertTrue((pager.subviews.last as? UIImageView) === prefetched)
+        XCTAssertEqual(prefetched?.transform,.identity); XCTAssertEqual(prefetched?.alpha,1)
+        XCTAssertFalse(pager.accessibilityScroll(.right))
+        pager.perform(request); XCTAssertEqual(commits,1)
+    }
+
+    @MainActor
+    func testReplacingPhotoMidAnimationCannotCommitTheOldPhoto() async {
+        let window = UIWindow(frame:CGRect(x:0,y:0,width:370,height:600))
+        window.rootViewController = UIViewController(); window.isHidden = false
+        defer { window.isHidden = true }
+        let pager = ReviewScrollView(frame:window.bounds)
+        window.rootViewController!.view.addSubview(pager); pager.layoutIfNeeded()
+        let stale = expectation(description:"old photo must not be staged"); stale.isInverted = true
+        pager.configure(current:"a",previous:nil,next:"b",video:false,images:[:],failed:[],step:{ _ in },stage:{ stale.fulfill() })
+        pager.perform(ReviewMotionRequest(action:.stage))
+        pager.configure(current:"c",previous:nil,next:nil,video:false,images:[:],failed:[],step:{ _ in },stage:{})
+        await fulfillment(of:[stale],timeout:0.45)
+        XCTAssertEqual((pager.subviews.last as? UIImageView)?.transform,.identity)
+    }
+
     func testReviewCursorHandlesLargeLibrariesWithoutRebuildingIdentifierSets() {
         let ids = (0..<12000).map { "asset-\($0)" }
         let records = Dictionary(uniqueKeysWithValues:ids.map { ($0,media($0)) })
         XCTAssertEqual(ReviewNavigation.next(from:5000,ids:ids,records:records,pending:[ids[5001]]),5002)
-        XCTAssertEqual(ReviewNavigation.previous(from:5002,ids:ids,records:records),5001)
-        XCTAssertEqual(ReviewNavigation.previous(from:0,ids:ids,records:records),0)
+        XCTAssertEqual(ReviewNavigation.previous(from:5002,ids:ids,records:records,pending:[ids[5001]]),5000)
+        XCTAssertEqual(ReviewNavigation.previous(from:0,ids:ids,records:records,pending:[]),0)
         XCTAssertEqual(ReviewNavigation.next(from:11999,ids:ids,records:records,pending:[]),12000)
     }
 
