@@ -236,7 +236,7 @@ final class ReviewUITests: XCTestCase {
         let link = prefix ? elements.matching(NSPredicate(format:"identifier BEGINSWITH %@",entry)).firstMatch : elements.matching(identifier:entry).firstMatch
         XCTAssertTrue(link.waitForExistence(timeout:10)); link.tap()
         let start = app.buttons["collection.review"]
-        XCTAssertTrue(start.waitForExistence(timeout:10)); start.tap()
+        XCTAssertTrue(start.waitForExistence(timeout:10)); XCTAssertTrue(start.isEnabled,"The collection must have loaded matching sample records"); start.tap()
         let counter = app.staticTexts["review.counter"]
         XCTAssertTrue(counter.waitForExistence(timeout:10))
         assertPosition(1,counter:counter)

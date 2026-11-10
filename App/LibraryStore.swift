@@ -69,6 +69,13 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
     }
 
     func start() async {
+        // The root task and scene activation can both request startup. Protect
+        // preview seeding too: independently generated trip UUIDs must never
+        // be paired with the other startup's asynchronously built index.
+        guard !starting else { return }
+        guard !loaded else { refreshIfNeeded(); return }
+        starting = true
+        defer { starting = false }
         #if DEBUG
         if DesignPreview.enabled {
             authorization = .authorized
@@ -96,10 +103,6 @@ final class LibraryStore: NSObject, ObservableObject, PHPhotoLibraryChangeObserv
             return
         }
         #endif
-        guard !starting else { return }
-        guard !loaded else { refreshIfNeeded(); return }
-        starting = true
-        defer { starting = false }
         do { state = try await disk.load(); storageReadable = true; loadError = nil }
         catch {
             storageReadable = false
